@@ -232,9 +232,9 @@ func (c *httpCaller) smartDoRequest(timeout time.Duration,
 }
 
 func (c *httpCaller) logHttpResponse(url string, response *fasthttp.Response) {
-	rspBytes := response.Body()
+	rspBytes, _ := response.BodyGunzip()
 	if len(rspBytes) > 0 {
-		logs.Error("http status not 200, url:%s code:%d headers:\n%s\n body:\n%s",
+		logs.Error("http status not 200, url:%s code:%d headers:\n%s%s\n",
 			url, response.StatusCode(), string(response.Header.Header()), string(rspBytes))
 		return
 	}
