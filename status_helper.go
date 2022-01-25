@@ -9,10 +9,6 @@ func IsSuccess(code int32) bool {
 	return code == StatusCodeSuccess || code == 200
 }
 
-func IsSuccessCode(code int32) bool {
-	return code == StatusCodeSuccess || code == 200
-}
-
 func IsServerOverload(code int32) bool {
 	return code == StatusCodeTooManyRequest
 }

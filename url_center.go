@@ -44,6 +44,7 @@ type urlCenter struct {
 // example path: /Retail/User
 // will build url to schema://host/Retail/User
 func (u *urlCenter) getURL(path string) string {
+	path = strings.TrimPrefix(path, "/")
 	u.lock.RLock()
 	url, exist := u.pathURLMap[path]
 	u.lock.RUnlock()
@@ -53,7 +54,6 @@ func (u *urlCenter) getURL(path string) string {
 	u.lock.Lock()
 	_, exist = u.pathURLMap[path]
 	if !exist {
-		path = strings.TrimPrefix(path, "/")
 		url = fmt.Sprintf("%s/%s", u.urlFormat, path)
 		u.pathURLMap[path] = url
 	}

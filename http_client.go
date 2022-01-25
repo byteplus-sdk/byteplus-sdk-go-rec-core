@@ -43,7 +43,6 @@ type httpClientBuilder struct {
 	schema         string
 	hostHeader     string
 	hosts          []string
-	headers        map[string]string
 	region         Region
 	hostAvailabler HostAvailabler
 }
@@ -94,11 +93,6 @@ func (receiver *httpClientBuilder) HostHeader(hostHeader string) *httpClientBuil
 
 func (receiver *httpClientBuilder) Hosts(hosts []string) *httpClientBuilder {
 	receiver.hosts = hosts
-	return receiver
-}
-
-func (receiver *httpClientBuilder) Headers(headers map[string]string) *httpClientBuilder {
-	receiver.headers = headers
 	return receiver
 }
 
