@@ -32,7 +32,7 @@ func (c *httpCaller) doJsonRequest(url string, request interface{},
 	response interface{}, options *option.Options) error {
 	reqBytes, err := json.Marshal(request)
 	if err != nil {
-		logs.Error("json marshal request fail, err:%s url:%s", err.Error(), url)
+		logs.Error("json marshal request fail, err:%v url:%s", err, url)
 		return err
 	}
 	headers := c.buildHeaders(options, "application/json")
@@ -43,7 +43,7 @@ func (c *httpCaller) doJsonRequest(url string, request interface{},
 	}
 	err = json.Unmarshal(rspBytes, &response)
 	if err != nil {
-		logs.Error("unmarshal response fail, err:%s url:%s", err.Error(), url)
+		logs.Error("unmarshal response fail, err:%v url:%s", err, url)
 		return err
 	}
 	return nil
@@ -53,7 +53,7 @@ func (c *httpCaller) doPbRequest(url string, request proto.Message,
 	response proto.Message, options *option.Options) error {
 	reqBytes, err := proto.Marshal(request)
 	if err != nil {
-		logs.Error("marshal request fail, err:%s url:%s", err.Error(), url)
+		logs.Error("marshal request fail, err:%v url:%s", err, url)
 		return err
 	}
 	headers := c.buildHeaders(options, "application/x-protobuf")
@@ -64,7 +64,7 @@ func (c *httpCaller) doPbRequest(url string, request proto.Message,
 	}
 	err = proto.Unmarshal(rspBytes, response)
 	if err != nil {
-		logs.Error("unmarshal response fail, err:%s url:%s", err.Error(), url)
+		logs.Error("unmarshal response fail, err:%v url:%s", err, url)
 		return err
 	}
 	return nil
@@ -177,22 +177,22 @@ func (c *httpCaller) doHttpRequest(url string, headers map[string]string,
 	defer func() {
 		logs.Debug("http url:%s, cost:%s", url, time.Now().Sub(start))
 	}()
-	logs.Trace("http request header:\n%s", string(request.Header.Header()))
+	logs.Trace("http request header:\n%s", &request.Header)
 	err := c.smartDoRequest(timeout, request, response)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "timeout") {
-			logs.Error("do http request timeout, msg:%s url:%s", err.Error(), url)
+			logs.Error("do http request timeout, err:%v url:%s", err, url)
 			return nil, errors.New(netErrMark + " timeout")
 		}
-		logs.Error("do http request occur error, msg:%s url:%s", err.Error(), url)
+		logs.Error("do http request occur error, err:%v url:%s", err, url)
 		return nil, err
 	}
-	logs.Trace("http response headers:\n%s", string(response.Header.Header()))
+	logs.Trace("http response url:%s headers:\n%s", url, &response.Header)
 	if response.StatusCode() != fasthttp.StatusOK {
-		c.logHttpResponse(url, response)
+		c.logFailureStatus(url, response)
 		return nil, errors.New(netErrMark + "http status not 200")
 	}
-	return response.BodyGunzip()
+	return decompressResponse(url, response)
 }
 
 func (c *httpCaller) acquireRequest(url string,
@@ -231,13 +231,34 @@ func (c *httpCaller) smartDoRequest(timeout time.Duration,
 	return err
 }
 
-func (c *httpCaller) logHttpResponse(url string, response *fasthttp.Response) {
-	rspBytes, _ := response.BodyGunzip()
+func (c *httpCaller) logFailureStatus(url string, response *fasthttp.Response) {
+	rspBytes, _ := decompressResponse(url, response)
 	if len(rspBytes) > 0 {
 		logs.Error("http status not 200, url:%s code:%d headers:\n%s%s\n",
-			url, response.StatusCode(), string(response.Header.Header()), string(rspBytes))
+			url, response.StatusCode(), &response.Header, string(rspBytes))
 		return
 	}
 	logs.Error("http status not 200, url:%s code:%d headers:\n%s\n",
-		url, response.StatusCode(), string(response.Header.Header()))
+		url, response.StatusCode(), &response.Header)
+}
+
+func decompressResponse(url string, response *fasthttp.Response) ([]byte, error) {
+	contentEncoding := strings.ToLower(strings.TrimSpace(string(response.Header.Peek("Content-Encoding"))))
+	switch contentEncoding {
+	case "gzip":
+		respBodyBytes, err := response.BodyGunzip()
+		if err != nil {
+			logs.Error("decompress gzip resp occur error, "+
+				"msg:%v url:%s header:\n%s", err, url, &response.Header)
+			return nil, err
+		}
+		return respBodyBytes, nil
+	case "":
+		return response.Body(), nil
+	default:
+		logs.Error("receive unsupported response "+
+			"content encoding:%s url:%s header:\n%s", contentEncoding, url, &response.Header)
+		err := errors.New("unsupported resp content encoding:" + contentEncoding)
+		return nil, err
+	}
 }
