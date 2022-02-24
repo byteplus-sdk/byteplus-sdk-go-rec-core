@@ -2,7 +2,6 @@ package core
 
 import (
 	"errors"
-	"fmt"
 
 	"github.com/byteplus-sdk/byteplus-sdk-go-rec-core/option"
 	"github.com/valyala/fasthttp"
@@ -13,20 +12,24 @@ type HTTPClient struct {
 	cli            *httpCaller
 	hostAvailabler HostAvailabler
 	schema         string
+	projectID      string
 }
 
 func (h *HTTPClient) DoJsonRequest(path string, request interface{},
 	response proto.Message, options *option.Options) error {
-	host := h.hostAvailabler.GetHost()
-	url := urlCenterInstance(h.schema, host).getURL(path)
-	return h.cli.doJsonRequest(url, request, response, options)
+	return h.cli.doJsonRequest(h.buildURL(path), request, response, options)
 }
 
 func (h *HTTPClient) DoPbRequest(path string, request proto.Message,
 	response proto.Message, options *option.Options) error {
-	host := h.hostAvailabler.GetHost()
-	url := urlCenterInstance(h.schema, host).getURL(path)
-	return h.cli.doPbRequest(url, request, response, options)
+	return h.cli.doPbRequest(h.buildURL(path), request, response, options)
+}
+
+func (h *HTTPClient) buildURL(path string) string {
+	if h.projectID == "" {
+		return buildURL(h.schema, h.hostAvailabler.GetHost(), path)
+	}
+	return buildURL(h.schema, h.hostAvailabler.GetHostByPath(path), path)
 }
 
 func (h *HTTPClient) Shutdown() {
@@ -35,15 +38,15 @@ func (h *HTTPClient) Shutdown() {
 
 type httpClientBuilder struct {
 	tenantID       string
-	token          string
-	ak             string
-	sk             string
+	projectID      string
+	airAuthToken   string
+	authAK         string
+	authSK         string
 	authService    string
 	useAirAuth     bool
 	schema         string
-	hostHeader     string
 	hosts          []string
-	region         Region
+	region         IRegion
 	hostAvailabler HostAvailabler
 }
 
@@ -56,18 +59,23 @@ func (receiver *httpClientBuilder) TenantID(tenantID string) *httpClientBuilder 
 	return receiver
 }
 
-func (receiver *httpClientBuilder) Token(token string) *httpClientBuilder {
-	receiver.token = token
+func (receiver *httpClientBuilder) ProjectID(projectID string) *httpClientBuilder {
+	receiver.projectID = projectID
 	return receiver
 }
 
-func (receiver *httpClientBuilder) AK(ak string) *httpClientBuilder {
-	receiver.ak = ak
+func (receiver *httpClientBuilder) AirAuthToken(airAuthToken string) *httpClientBuilder {
+	receiver.airAuthToken = airAuthToken
 	return receiver
 }
 
-func (receiver *httpClientBuilder) SK(sk string) *httpClientBuilder {
-	receiver.sk = sk
+func (receiver *httpClientBuilder) AuthAK(authAK string) *httpClientBuilder {
+	receiver.authAK = authAK
+	return receiver
+}
+
+func (receiver *httpClientBuilder) AuthSK(authSK string) *httpClientBuilder {
+	receiver.authSK = authSK
 	return receiver
 }
 
@@ -86,17 +94,12 @@ func (receiver *httpClientBuilder) Schema(schema string) *httpClientBuilder {
 	return receiver
 }
 
-func (receiver *httpClientBuilder) HostHeader(hostHeader string) *httpClientBuilder {
-	receiver.hostHeader = hostHeader
-	return receiver
-}
-
 func (receiver *httpClientBuilder) Hosts(hosts []string) *httpClientBuilder {
 	receiver.hosts = hosts
 	return receiver
 }
 
-func (receiver *httpClientBuilder) Region(region Region) *httpClientBuilder {
+func (receiver *httpClientBuilder) Region(region IRegion) *httpClientBuilder {
 	receiver.region = region
 	return receiver
 }
@@ -111,12 +114,15 @@ func (receiver *httpClientBuilder) Build() (*HTTPClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	receiver.fillHosts()
-	receiver.fillDefault()
+	err = receiver.fillDefault()
+	if err != nil {
+		return nil, err
+	}
 	return &HTTPClient{
 		cli:            receiver.newHTTPCaller(),
 		hostAvailabler: receiver.hostAvailabler,
 		schema:         receiver.schema,
+		projectID:      receiver.projectID,
 	}, nil
 }
 
@@ -127,75 +133,60 @@ func (receiver *httpClientBuilder) checkRequiredField() error {
 	if err := receiver.checkAuthRequiredField(); err != nil {
 		return err
 	}
-	if receiver.region == regionUnknown {
+	if receiver.region == nil {
 		return errors.New("region is null")
-	}
-	// check if the region is registered
-	if getRegionConfig(receiver.region) == nil {
-		return errors.New(fmt.Sprintf("region(%s) is not support", receiver.region))
 	}
 	return nil
 }
 
 func (receiver *httpClientBuilder) checkAuthRequiredField() error {
-	if receiver.useAirAuth && receiver.token == "" {
-		return errors.New("token is null")
+	if receiver.useAirAuth && receiver.airAuthToken == "" {
+		return errors.New("token cannot be null")
 	}
-	if !receiver.useAirAuth && (receiver.ak == "" || receiver.sk == "") {
-		return errors.New("ak or sk is null")
+	if !receiver.useAirAuth && (receiver.authAK == "" || receiver.authSK == "") {
+		return errors.New("ak and sk cannot be null")
 	}
 	return nil
 }
 
-func (receiver *httpClientBuilder) fillHosts() {
-	if len(receiver.hosts) > 0 {
-		return
-	}
-	receiver.hosts = getRegionHosts(receiver.region)
-}
-
-func (receiver *httpClientBuilder) fillDefault() {
+func (receiver *httpClientBuilder) fillDefault() error {
 	if receiver.schema == "" {
 		receiver.schema = "https"
 	}
+	var err error
 	if receiver.hostAvailabler == nil {
-		hostAvailablerConfig := &PingHostAvailablerConfig{
-			PingUrlFormat:        defaultPingURLFormat,
-			PingInterval:         defaultPingInterval,
-			PingTimeout:          defaultPingTimeout,
-			WindowSize:           defaultWindowSize,
-			FailureRateThreshold: defaultFailureRateThreshold,
-			Hosts:                receiver.hosts,
-			HostHeader:           receiver.hostHeader,
+		if len(receiver.hosts) > 0 {
+			receiver.hostAvailabler, err = NewPingHostAvailabler(receiver.hosts, &PingHostAvailablerConfig{})
+		} else {
+			if receiver.projectID != "" {
+				receiver.hostAvailabler, err = NewPingHostAvailablerWithProjectID(
+					receiver.region.GetHosts(), receiver.projectID, &PingHostAvailablerConfig{})
+			} else {
+				receiver.hostAvailabler, err = NewPingHostAvailabler(
+					receiver.region.GetHosts(), &PingHostAvailablerConfig{})
+			}
 		}
-		receiver.hostAvailabler = NewPingHostAvailabler(hostAvailablerConfig)
 	}
-	if len(receiver.hostAvailabler.Hosts()) == 0 {
-		receiver.hostAvailabler.SetHosts(receiver.hosts)
+	if err != nil {
+		return err
 	}
-	if receiver.hostAvailabler.HostHeader() == "" {
-		receiver.hostAvailabler.SetHostHeader(receiver.hostHeader)
-	}
+	return nil
 }
 
 func (receiver *httpClientBuilder) newHTTPCaller() *httpCaller {
+	authRegion := receiver.region.GetAuthRegion()
 	cred := credential{
-		accessKeyID:     receiver.ak,
-		secretAccessKey: receiver.sk,
+		accessKeyID:     receiver.authAK,
+		secretAccessKey: receiver.authSK,
 		service:         receiver.authService,
-		region:          getVolcCredentialRegion(receiver.region),
+		region:          authRegion,
 	}
 	mHTTPCaller := &httpCaller{
 		tenantID:        receiver.tenantID,
 		useAirAuth:      receiver.useAirAuth,
 		volcCredentials: cred,
-		token:           receiver.token,
-		hostHeader:      receiver.hostHeader,
-	}
-	if receiver.hostHeader != "" {
-		mHTTPCaller.hostHTTPCli = &fasthttp.HostClient{Addr: receiver.hosts[0]}
-	} else {
-		mHTTPCaller.defaultHTTPCli = &fasthttp.Client{}
+		airAuthToken:    receiver.airAuthToken,
+		httpCli:         &fasthttp.Client{},
 	}
 	return mHTTPCaller
 }

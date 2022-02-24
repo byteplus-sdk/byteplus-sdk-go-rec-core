@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"math"
 	"runtime/debug"
@@ -38,4 +39,11 @@ func IsNetError(err error) bool {
 
 func IsTimeoutError(err error) bool {
 	return strings.Contains(strings.ToLower(err.Error()), "timeout")
+}
+
+func buildURL(schema, host, path string) string {
+	if strings.HasPrefix(path, "/") {
+		return fmt.Sprintf("%s://%s%s", schema, host, path)
+	}
+	return fmt.Sprintf("%s://%s/%s", schema, host, path)
 }
