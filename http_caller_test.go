@@ -6,7 +6,7 @@ import (
 	"github.com/byteplus-sdk/byteplus-sdk-go-rec-core/option"
 )
 
-func TestHttpCaller_withOptionQueries(t *testing.T) {
+func TestHTTPCaller_withOptionQueries(t *testing.T) {
 	type args struct {
 		options *option.Options
 		url     string

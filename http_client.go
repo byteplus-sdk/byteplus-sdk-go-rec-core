@@ -15,21 +15,16 @@ type HTTPClient struct {
 	projectID      string
 }
 
-func (h *HTTPClient) DoJsonRequest(path string, request interface{},
+func (h *HTTPClient) DoJSONRequest(path string, request interface{},
 	response proto.Message, options *option.Options) error {
-	return h.cli.doJsonRequest(h.buildURL(path), request, response, options)
+	url := buildURL(h.schema, h.hostAvailabler.GetHost(path), path)
+	return h.cli.doJSONRequest(url, request, response, options)
 }
 
-func (h *HTTPClient) DoPbRequest(path string, request proto.Message,
+func (h *HTTPClient) DoPBRequest(path string, request proto.Message,
 	response proto.Message, options *option.Options) error {
-	return h.cli.doPbRequest(h.buildURL(path), request, response, options)
-}
-
-func (h *HTTPClient) buildURL(path string) string {
-	if h.projectID == "" {
-		return buildURL(h.schema, h.hostAvailabler.GetHost(), path)
-	}
-	return buildURL(h.schema, h.hostAvailabler.GetHostByPath(path), path)
+	url := buildURL(h.schema, h.hostAvailabler.GetHost(path), path)
+	return h.cli.doPBRequest(url, request, response, options)
 }
 
 func (h *HTTPClient) Shutdown() {
@@ -39,11 +34,11 @@ func (h *HTTPClient) Shutdown() {
 type httpClientBuilder struct {
 	tenantID       string
 	projectID      string
+	useAirAuth     bool
 	airAuthToken   string
 	authAK         string
 	authSK         string
 	authService    string
-	useAirAuth     bool
 	schema         string
 	hosts          []string
 	region         IRegion
@@ -114,10 +109,7 @@ func (receiver *httpClientBuilder) Build() (*HTTPClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = receiver.fillDefault()
-	if err != nil {
-		return nil, err
-	}
+	receiver.fillDefault()
 	return &HTTPClient{
 		cli:            receiver.newHTTPCaller(),
 		hostAvailabler: receiver.hostAvailabler,
@@ -149,28 +141,21 @@ func (receiver *httpClientBuilder) checkAuthRequiredField() error {
 	return nil
 }
 
-func (receiver *httpClientBuilder) fillDefault() error {
+func (receiver *httpClientBuilder) fillDefault() {
 	if receiver.schema == "" {
 		receiver.schema = "https"
 	}
-	var err error
 	if receiver.hostAvailabler == nil {
 		if len(receiver.hosts) > 0 {
-			receiver.hostAvailabler, err = NewPingHostAvailabler(receiver.hosts, &PingHostAvailablerConfig{})
+			receiver.hostAvailabler, _ = NewPingHostAvailabler(receiver.hosts, "", nil)
 		} else {
-			if receiver.projectID != "" {
-				receiver.hostAvailabler, err = NewPingHostAvailablerWithProjectID(
-					receiver.region.GetHosts(), receiver.projectID, &PingHostAvailablerConfig{})
-			} else {
-				receiver.hostAvailabler, err = NewPingHostAvailabler(
-					receiver.region.GetHosts(), &PingHostAvailablerConfig{})
-			}
+			receiver.hostAvailabler, _ = NewPingHostAvailabler(
+				receiver.region.GetHosts(),
+				receiver.projectID,
+				nil,
+			)
 		}
 	}
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 func (receiver *httpClientBuilder) newHTTPCaller() *httpCaller {
@@ -182,11 +167,11 @@ func (receiver *httpClientBuilder) newHTTPCaller() *httpCaller {
 		region:          authRegion,
 	}
 	mHTTPCaller := &httpCaller{
-		tenantID:        receiver.tenantID,
-		useAirAuth:      receiver.useAirAuth,
-		volcCredentials: cred,
-		airAuthToken:    receiver.airAuthToken,
-		httpCli:         &fasthttp.Client{},
+		tenantID:     receiver.tenantID,
+		useAirAuth:   receiver.useAirAuth,
+		credentials:  cred,
+		airAuthToken: receiver.airAuthToken,
+		httpCli:      &fasthttp.Client{},
 	}
 	return mHTTPCaller
 }

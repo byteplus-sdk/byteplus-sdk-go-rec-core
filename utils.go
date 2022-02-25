@@ -3,17 +3,18 @@ package core
 import (
 	"errors"
 	"fmt"
-	"log"
 	"math"
 	"runtime/debug"
 	"strings"
+
+	"github.com/byteplus-sdk/byteplus-sdk-go-rec-core/logs"
 )
 
 func AsyncExecute(runnable func()) {
 	go func(run func()) {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("[ByteplusSDK] async execute occur panic, "+
+				logs.Error("async execute occur panic, "+
 					"please feedback to bytedance, err:%v trace:\n%s", r, string(debug.Stack()))
 			}
 		}()

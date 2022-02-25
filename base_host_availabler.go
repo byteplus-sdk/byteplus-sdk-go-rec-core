@@ -12,8 +12,8 @@ import (
 )
 
 type HostAvailabler interface {
-	GetHost() string
-	GetHostByPath(path string) string
+	GetHost(path string) string
+
 	Shutdown()
 }
 
@@ -30,7 +30,7 @@ func (h *HostAvailabilityScore) String() string {
 	return fmt.Sprintf("%+v", *h)
 }
 
-type AbstractHostAvailabler struct {
+type HostAvailablerBase struct {
 	projectID            string
 	fetchHostsHTTPClient *fasthttp.Client
 	hostConfig           map[string][]string
@@ -38,46 +38,28 @@ type AbstractHostAvailabler struct {
 	stop                 chan bool
 }
 
-func NewAbstractHostAvailabler(defaultHosts []string, hostScorer HostScorer) (*AbstractHostAvailabler, error) {
+func NewHostAvailablerBase(defaultHosts []string, projectID string, hostScorer HostScorer) (*HostAvailablerBase, error) {
 	if len(defaultHosts) == 0 {
 		return nil, errors.New("default hosts are empty")
 	}
-	abstractHostAvailabler := &AbstractHostAvailabler{
-		hostScorer: hostScorer,
-	}
-	abstractHostAvailabler.Init(defaultHosts, true)
-	return abstractHostAvailabler, nil
-}
 
-func NewAbstractHostAvailablerWithProjectID(
-	defaultHosts []string,
-	projectID string,
-	closeFetchHostsFromServer bool,
-	hostScorer HostScorer) (*AbstractHostAvailabler, error) {
-	if len(defaultHosts) == 0 {
-		return nil, errors.New("default hosts are empty")
-	}
-	if len(projectID) == 0 {
-		return nil, errors.New("projectID is empty")
-	}
-	abstractHostAvailabler := &AbstractHostAvailabler{
+	hostAvailablerBase := &HostAvailablerBase{
 		projectID:  projectID,
 		hostScorer: hostScorer,
 	}
-	abstractHostAvailabler.Init(defaultHosts, closeFetchHostsFromServer)
-	return abstractHostAvailabler, nil
+	hostAvailablerBase.init(defaultHosts)
+	return hostAvailablerBase, nil
 }
 
-func (a *AbstractHostAvailabler) Init(defaultHosts []string, closeFetchHostsFromServer bool) {
+func (a *HostAvailablerBase) init(defaultHosts []string) {
 	a.setHosts(defaultHosts)
 	a.stop = make(chan bool)
-	if !closeFetchHostsFromServer {
+	if len(a.projectID) > 0 {
 		a.fetchHostsHTTPClient = &fasthttp.Client{}
 		a.fetchHostsFromServer()
 		a.scheduleFetchHostsFromServer()
 	}
 	a.scheduleScoreAndUpdateHosts()
-
 }
 
 // setHosts
@@ -87,7 +69,7 @@ func (a *AbstractHostAvailabler) Init(defaultHosts []string, closeFetchHostsFrom
 //     "*": ${hosts}
 //   }
 // }
-func (a *AbstractHostAvailabler) setHosts(hosts []string) {
+func (a *HostAvailablerBase) setHosts(hosts []string) {
 	a.hostConfig = map[string][]string{
 		"*": hosts,
 	}
@@ -95,13 +77,13 @@ func (a *AbstractHostAvailabler) setHosts(hosts []string) {
 	a.doScoreAndUpdateHosts(a.hostConfig)
 }
 
-func (a *AbstractHostAvailabler) stopFetchHostsFromServer() {
+func (a *HostAvailablerBase) stopFetchHostsFromServer() {
 	if a.stop != nil {
 		close(a.stop)
 	}
 }
 
-func (a *AbstractHostAvailabler) scheduleScoreAndUpdateHosts() {
+func (a *HostAvailablerBase) scheduleScoreAndUpdateHosts() {
 	AsyncExecute(func() {
 		ticker := time.NewTicker(time.Second)
 		for true {
@@ -128,24 +110,24 @@ func (a *AbstractHostAvailabler) scheduleScoreAndUpdateHosts() {
 // {
 //   "*": ["bytedance.com", "byteplus.com"]
 // }
-func (a *AbstractHostAvailabler) doScoreAndUpdateHosts(hostConfig map[string][]string) {
+func (a *HostAvailablerBase) doScoreAndUpdateHosts(hostConfig map[string][]string) {
 	hosts := a.distinctHosts(hostConfig)
 	newHostScores := a.hostScorer.ScoreHosts(hosts)
-	logs.Debug("[ByteplusSDK] score hosts result: %s", newHostScores)
+	logs.Debug("score hosts result: %s", newHostScores)
 	if len(newHostScores) == 0 {
-		logs.Error("[ByteplusSDK] scoring hosts return an empty list")
+		logs.Error("scoring hosts return an empty list")
 		return
 	}
 	newHostConfig := a.copyAndSortHost(hostConfig, newHostScores)
 	if a.isHostConfigNotUpdated(hostConfig, newHostConfig) {
-		logs.Debug("[ByteplusSDK] host order is not changed, %+v", newHostConfig)
+		logs.Debug("host order is not changed, %+v", newHostConfig)
 		return
 	}
-	logs.Debug("[ByteplusSDK] set new host config: %+v, old config: %+v", newHostConfig, a.hostConfig)
+	logs.Debug("set new host config: %+v, old config: %+v", newHostConfig, a.hostConfig)
 	a.hostConfig = newHostConfig
 }
 
-func (a *AbstractHostAvailabler) distinctHosts(hostConfig map[string][]string) []string {
+func (a *HostAvailablerBase) distinctHosts(hostConfig map[string][]string) []string {
 	result := make([]string, 0)
 	hostMap := make(map[string]bool)
 	for _, hosts := range hostConfig {
@@ -160,7 +142,7 @@ func (a *AbstractHostAvailabler) distinctHosts(hostConfig map[string][]string) [
 	return result
 }
 
-func (a *AbstractHostAvailabler) copyAndSortHost(hostConfig map[string][]string,
+func (a *HostAvailablerBase) copyAndSortHost(hostConfig map[string][]string,
 	newHostScores []*HostAvailabilityScore) map[string][]string {
 	hostScoreIndex := make(map[string]float64, len(newHostScores))
 	for _, hostScore := range newHostScores {
@@ -180,7 +162,7 @@ func (a *AbstractHostAvailabler) copyAndSortHost(hostConfig map[string][]string,
 	return newHostConfig
 }
 
-func (a *AbstractHostAvailabler) isHostConfigNotUpdated(oldHostConfig, newHostConfig map[string][]string) bool {
+func (a *HostAvailablerBase) isHostConfigNotUpdated(oldHostConfig, newHostConfig map[string][]string) bool {
 	if oldHostConfig == nil {
 		return false
 	}
@@ -196,7 +178,7 @@ func (a *AbstractHostAvailabler) isHostConfigNotUpdated(oldHostConfig, newHostCo
 	return true
 }
 
-func (a *AbstractHostAvailabler) isEqualHosts(hostsA, hostsB []string) bool {
+func (a *HostAvailablerBase) isEqualHosts(hostsA, hostsB []string) bool {
 	if len(hostsA) != len(hostsB) {
 		return false
 	}
@@ -208,7 +190,7 @@ func (a *AbstractHostAvailabler) isEqualHosts(hostsA, hostsB []string) bool {
 	return true
 }
 
-func (a *AbstractHostAvailabler) scheduleFetchHostsFromServer() {
+func (a *HostAvailablerBase) scheduleFetchHostsFromServer() {
 	AsyncExecute(func() {
 		ticker := time.NewTicker(time.Second * 10)
 		for true {
@@ -223,28 +205,28 @@ func (a *AbstractHostAvailabler) scheduleFetchHostsFromServer() {
 	})
 }
 
-func (a *AbstractHostAvailabler) fetchHostsFromServer() {
-	url := fmt.Sprintf("http://%s/data/api/sdk/host?project_id=%s", a.GetHost(), a.projectID)
+func (a *HostAvailablerBase) fetchHostsFromServer() {
+	url := fmt.Sprintf("http://%s/data/api/sdk/host?project_id=%s", a.GetHost("*"), a.projectID)
 	for i := 0; i < 3; i++ {
 		rspHostConfig := a.doFetchHostsFromServer(url)
-		if len(rspHostConfig) == 0 {
+		if rspHostConfig == nil {
 			continue
 		}
 		if a.isServerHostsNotUpdated(rspHostConfig) {
-			logs.Debug("[ByteplusSDK] hosts from server are not changed, config: %+v", rspHostConfig)
+			logs.Debug("hosts from server are not changed, url: %s config: %+v", url, rspHostConfig)
 			return
 		}
 		if hosts, exist := rspHostConfig["*"]; exist || len(hosts) == 0 {
-			logs.Warn("[ByteplusSDK] hosts from server is empty, url:'%s' config: %+v", url, rspHostConfig)
+			logs.Warn("no default value in hosts from server, url: %s, config: %+v", url, rspHostConfig)
 			return
 		}
 		a.doScoreAndUpdateHosts(rspHostConfig)
 		return
 	}
-	logs.Warn("[ByteplusSDK] fetch host from server fail although retried, url: {}", url)
+	logs.Warn("fetch host from server fail although retried, url: %s", url)
 }
 
-func (a *AbstractHostAvailabler) doFetchHostsFromServer(url string) map[string][]string {
+func (a *HostAvailablerBase) doFetchHostsFromServer(url string) map[string][]string {
 	rspHostConfig := make(map[string][]string)
 	request := fasthttp.AcquireRequest()
 	response := fasthttp.AcquireResponse()
@@ -255,30 +237,35 @@ func (a *AbstractHostAvailabler) doFetchHostsFromServer(url string) map[string][
 	request.SetRequestURI(url)
 	request.Header.SetMethod(fasthttp.MethodGet)
 	start := time.Now()
-	err := a.fetchHostsHTTPClient.DoTimeout(request, response, time.Second*5)
+	err := a.fetchHostsHTTPClient.DoTimeout(request, response, 5*time.Second)
 	cost := time.Now().Sub(start)
 	if err != nil {
-		logs.Warn("[ByteplusSDK] fetch host from server fail, url:%s cost:%s err:%s", url, cost, err.Error())
+		logs.Warn("fetch host from server fail, url:%s cost:%s err:%v", url, cost, err)
 		return nil
 	}
 	if response.StatusCode() == fasthttp.StatusNotFound {
-		logs.Warn("[ByteplusSDK] fetch host from server return not found status, cost:%s", cost)
-		return nil
+		logs.Warn("fetch host from server return not found status, cost:%s", cost)
+		return map[string][]string{}
 	}
 	if response.StatusCode() != fasthttp.StatusOK {
-		logs.Warn("[ByteplusSDK] fetch host from server return not ok status:%d cost:%s", response.StatusCode(), cost)
+		logs.Warn("fetch host from server return not ok status:%d cost:%s", response.StatusCode(), cost)
 		return nil
 	}
 	rspBytes := response.Body()
-	logs.Debug("[ByteplusSDK] fetch host from server, cost:%s rsp:%s", cost, rspBytes)
+	logs.Debug("fetch host from server, cost:%s rsp:%s", cost, rspBytes)
 	if len(rspBytes) > 0 {
-		json.Unmarshal(rspBytes, &rspHostConfig)
+		err = json.Unmarshal(rspBytes, &rspHostConfig)
+		if err != nil {
+			logs.Warn("unmarshal host config from host server fail, url:%s cost:%s err:%v", url, cost, err)
+			return map[string][]string{}
+		}
 		return rspHostConfig
 	}
-	return nil
+	logs.Warn("hosts from server are empty")
+	return map[string][]string{}
 }
 
-func (a *AbstractHostAvailabler) isServerHostsNotUpdated(newHostConfig map[string][]string) bool {
+func (a *HostAvailablerBase) isServerHostsNotUpdated(newHostConfig map[string][]string) bool {
 	if len(newHostConfig) != len(a.hostConfig) {
 		return false
 	}
@@ -297,7 +284,7 @@ func (a *AbstractHostAvailabler) isServerHostsNotUpdated(newHostConfig map[strin
 	return true
 }
 
-func (a *AbstractHostAvailabler) containsAll(hosts []string, hosts2 []string) bool {
+func (a *HostAvailablerBase) containsAll(hosts []string, hosts2 []string) bool {
 	hostIndexMap := make(map[string]bool, len(hosts))
 	for _, host := range hosts {
 		hostIndexMap[host] = true
@@ -310,11 +297,7 @@ func (a *AbstractHostAvailabler) containsAll(hosts []string, hosts2 []string) bo
 	return true
 }
 
-func (a *AbstractHostAvailabler) GetHost() string {
-	return a.hostConfig["*"][0]
-}
-
-func (a *AbstractHostAvailabler) GetHostByPath(path string) string {
+func (a *HostAvailablerBase) GetHost(path string) string {
 	pathHosts, exist := a.hostConfig[path]
 	if exist && len(pathHosts) > 0 {
 		return pathHosts[0]
@@ -322,7 +305,7 @@ func (a *AbstractHostAvailabler) GetHostByPath(path string) string {
 	return a.hostConfig["*"][0]
 }
 
-func (a *AbstractHostAvailabler) Shutdown() {
+func (a *HostAvailablerBase) Shutdown() {
 	if a.stop != nil {
 		close(a.stop)
 	}

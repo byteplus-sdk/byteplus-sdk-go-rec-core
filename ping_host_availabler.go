@@ -23,54 +23,39 @@ type PingHostAvailablerConfig struct {
 	// record the window size of each host's test status
 	WindowSize int
 	// timeout for requesting hosts
-	PingTimeout               time.Duration
-	CloseFetchHostsFromServer bool
+	PingTimeout time.Duration
 }
 
 type pingHostAvailabler struct {
-	*AbstractHostAvailabler
+	*HostAvailablerBase
 	config        *PingHostAvailablerConfig
 	hostWindowMap map[string]*window
 	httpCli       *fasthttp.Client
 }
 
-func NewPingHostAvailabler(hosts []string, config *PingHostAvailablerConfig) (HostAvailabler, error) {
-	fillDefaultConfig(config)
+func NewPingHostAvailabler(hosts []string, projectID string,
+	config *PingHostAvailablerConfig) (HostAvailabler, error) {
 	hostAvailabler := &pingHostAvailabler{
-		config:        config,
+		config:        fillDefaultConfig(config),
 		httpCli:       &fasthttp.Client{},
 		hostWindowMap: make(map[string]*window, len(hosts)),
 	}
-	abstractHostAvailabler, err := NewAbstractHostAvailabler(hosts, hostAvailabler)
-	if err != nil {
-		return nil, err
-	}
-	hostAvailabler.AbstractHostAvailabler = abstractHostAvailabler
-	return hostAvailabler, err
-}
-
-func NewPingHostAvailablerWithProjectID(hosts []string, projectID string,
-	config *PingHostAvailablerConfig) (HostAvailabler, error) {
-	fillDefaultConfig(config)
-	hostAvailabler := &pingHostAvailabler{
-		config:        config,
-		httpCli:       &fasthttp.Client{},
-		hostWindowMap: make(map[string]*window),
-	}
-	abstractHostAvailabler, err := NewAbstractHostAvailablerWithProjectID(
+	hostAvailablerBase, err := NewHostAvailablerBase(
 		hosts,
 		projectID,
-		config.CloseFetchHostsFromServer,
 		hostAvailabler,
 	)
 	if err != nil {
 		return nil, err
 	}
-	hostAvailabler.AbstractHostAvailabler = abstractHostAvailabler
+	hostAvailabler.HostAvailablerBase = hostAvailablerBase
 	return hostAvailabler, nil
 }
 
-func fillDefaultConfig(config *PingHostAvailablerConfig) {
+func fillDefaultConfig(config *PingHostAvailablerConfig) *PingHostAvailablerConfig {
+	if config == nil {
+		config = &PingHostAvailablerConfig{}
+	}
 	if config.PingUrlFormat == "" {
 		config.PingUrlFormat = defaultPingURLFormat
 	}
@@ -80,10 +65,11 @@ func fillDefaultConfig(config *PingHostAvailablerConfig) {
 	if config.WindowSize <= 0 {
 		config.WindowSize = defaultWindowSize
 	}
+	return config
 }
 
 func (receiver *pingHostAvailabler) ScoreHosts(hosts []string) []*HostAvailabilityScore {
-	logs.Debug("[ByteplusSDK] do score hosts:%v", hosts)
+	logs.Debug("do score hosts:%v", hosts)
 	result := make([]*HostAvailabilityScore, len(hosts))
 	if len(hosts) == 1 {
 		result[0] = &HostAvailabilityScore{Host: hosts[0], Score: 0.0}
@@ -118,15 +104,14 @@ func (receiver *pingHostAvailabler) doPing(host string) bool {
 	err := receiver.httpCli.DoTimeout(request, response, receiver.config.PingTimeout)
 	cost := time.Now().Sub(start)
 	if err != nil {
-		logs.Warn("[ByteplusSDK] ping find err, host:%s cost:%s err:%s",
-			host, cost, err.Error())
+		logs.Warn("ping find err, host:%s cost:%s err:%v", host, cost, err)
 		return false
 	}
 	if receiver.isPingSuccess(response) {
-		logs.Debug("[ByteplusSDK]ping success host:%s cost:%s", host, cost)
+		logs.Debug("ping success host:%s cost:%s", host, cost)
 		return true
 	}
-	logs.Warn("[ByteplusSDK] ping fail, host:%s cost:%s status:%d", host, cost, response.StatusCode())
+	logs.Warn("ping fail, host:%s cost:%s status:%d", host, cost, response.StatusCode())
 	return false
 }
 

@@ -424,7 +424,7 @@ func doSend(request *fasthttp.Request) error {
 		fasthttp.ReleaseRequest(request)
 		fasthttp.ReleaseResponse(response)
 	}()
-	err := metricsCollector.httpCli.DoTimeout(request, response, defaultHttpTimeout)
+	err := metricsCollector.httpCli.DoTimeout(request, response, defaultHTTPTimeout)
 	if err == nil && response.StatusCode() == fasthttp.StatusOK {
 		return nil
 	}
