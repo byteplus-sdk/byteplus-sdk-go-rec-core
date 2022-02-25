@@ -41,7 +41,7 @@ var now = func() time.Time {
 	return time.Now().UTC()
 }
 
-func volcSign(req *fasthttp.Request, cred credential) *fasthttp.Request {
+func sign(req *fasthttp.Request, cred credential) *fasthttp.Request {
 	prepareRequestV4(req)
 
 	meta := &metadata{}
@@ -132,7 +132,9 @@ func hashedCanonicalRequestV4(req *fasthttp.Request, meta *metadata) string {
 	req.URI().QueryArgs().VisitAll(func(key, value []byte) {
 		urlQuery.Add(string(key), string(value))
 	})
-	canonicalRequest := concat("\n", string(req.Header.Method()), normURI(string(req.URI().Path())), normQuery(urlQuery.Encode()), headersToSign, meta.signedHeaders, payloadHash)
+	canonicalRequest := concat("\n", string(req.Header.Method()),
+		normURI(string(req.URI().Path())), normQuery(urlQuery.Encode()),
+		headersToSign, meta.signedHeaders, payloadHash)
 
 	return hashSHA256([]byte(canonicalRequest))
 }

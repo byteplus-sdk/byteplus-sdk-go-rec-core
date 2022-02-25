@@ -12,7 +12,7 @@ const (
 	defaultFlushInterval = 10 * time.Second
 	reservoirSize        = 65536
 	maxTryTimes          = 2
-	defaultHttpTimeout   = 800 * time.Millisecond
+	defaultHTTPTimeout   = 800 * time.Millisecond
 
 	delimiter = "+"
 )
