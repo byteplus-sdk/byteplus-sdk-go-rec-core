@@ -41,7 +41,7 @@ var now = func() time.Time {
 	return time.Now().UTC()
 }
 
-func volcSign(req *fasthttp.Request, cred credential) *fasthttp.Request {
+func sign(req *fasthttp.Request, cred credential) *fasthttp.Request {
 	prepareRequestV4(req)
 
 	meta := &metadata{}
@@ -132,7 +132,9 @@ func hashedCanonicalRequestV4(req *fasthttp.Request, meta *metadata) string {
 	req.URI().QueryArgs().VisitAll(func(key, value []byte) {
 		urlQuery.Add(string(key), string(value))
 	})
-	canonicalRequest := concat("\n", string(req.Header.Method()), normuri(string(req.URI().Path())), normquery(urlQuery.Encode()), headersToSign, meta.signedHeaders, payloadHash)
+	canonicalRequest := concat("\n", string(req.Header.Method()),
+		normURI(string(req.URI().Path())), normQuery(urlQuery.Encode()),
+		headersToSign, meta.signedHeaders, payloadHash)
 
 	return hashSHA256([]byte(canonicalRequest))
 }
@@ -156,7 +158,7 @@ func concat(delim string, str ...string) string {
 	return strings.Join(str, delim)
 }
 
-func normuri(uri string) string {
+func normURI(uri string) string {
 	parts := strings.Split(uri, "/")
 	for i := range parts {
 		parts[i] = encodePathFrag(parts[i])
@@ -202,7 +204,7 @@ func shouldEscape(c byte) bool {
 	return true
 }
 
-func normquery(queryString string) string {
+func normQuery(queryString string) string {
 	return strings.Replace(queryString, "+", "%20", -1)
 }
 

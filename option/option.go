@@ -14,9 +14,9 @@ func Conv2Options(opts ...Option) *Options {
 
 type Option func(opts *Options)
 
-func WithRequestId(requestId string) Option {
+func WithRequestID(requestID string) Option {
 	return func(options *Options) {
-		options.RequestId = requestId
+		options.RequestID = requestID
 	}
 }
 

@@ -2,17 +2,19 @@ package core
 
 import (
 	"errors"
-	"log"
+	"fmt"
 	"math"
 	"runtime/debug"
 	"strings"
+
+	"github.com/byteplus-sdk/byteplus-sdk-go-rec-core/logs"
 )
 
 func AsyncExecute(runnable func()) {
 	go func(run func()) {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("[ByteplusSDK] async execute occur panic, "+
+				logs.Error("async execute occur panic, "+
 					"please feedback to bytedance, err:%v trace:\n%s", r, string(debug.Stack()))
 			}
 		}()
@@ -38,4 +40,11 @@ func IsNetError(err error) bool {
 
 func IsTimeoutError(err error) bool {
 	return strings.Contains(strings.ToLower(err.Error()), "timeout")
+}
+
+func buildURL(schema, host, path string) string {
+	if strings.HasPrefix(path, "/") {
+		return fmt.Sprintf("%s://%s%s", schema, host, path)
+	}
+	return fmt.Sprintf("%s://%s/%s", schema, host, path)
 }
