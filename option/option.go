@@ -14,25 +14,33 @@ func Conv2Options(opts ...Option) *Options {
 
 type Option func(opts *Options)
 
+// WithRequestID Specify the request_id manually. By default,
+// the SDK generates a unique request_id for each request using the UUID
 func WithRequestID(requestID string) Option {
 	return func(options *Options) {
 		options.RequestID = requestID
 	}
 }
 
+// WithTimeout Specifies the timeout for this request
 func WithTimeout(timeout time.Duration) Option {
 	return func(options *Options) {
 		options.Timeout = timeout
 	}
 }
 
-func WithHeaders(headers map[string]string) Option {
+// WithServerTimeout Specifies the maximum time it will take for
+// the server to process the request. The server will try to return
+// the result within this time, even if the task is not completed
+func WithServerTimeout(timeout time.Duration) Option {
 	return func(options *Options) {
-		options.Headers = headers
+		options.ServerTimeout = timeout
 	}
 }
 
-func WithHeader(key, value string) Option {
+// WithHTTPHeader Add an HTTP header to the request.
+// In general, you do not need to care this.
+func WithHTTPHeader(key, value string) Option {
 	return func(options *Options) {
 		if options.Headers == nil {
 			options.Headers = make(map[string]string)
@@ -41,19 +49,9 @@ func WithHeader(key, value string) Option {
 	}
 }
 
-func WithServerTimeout(timeout time.Duration) Option {
-	return func(options *Options) {
-		options.ServerTimeout = timeout
-	}
-}
-
-func WithQueries(queries map[string]string) Option {
-	return func(options *Options) {
-		options.Queries = queries
-	}
-}
-
-func WithQuery(key, value string) Option {
+// WithHTTPQuery Add an HTTP query to the request.
+// In general, you do not need to care this.
+func WithHTTPQuery(key, value string) Option {
 	return func(options *Options) {
 		if options.Queries == nil {
 			options.Queries = make(map[string]string)

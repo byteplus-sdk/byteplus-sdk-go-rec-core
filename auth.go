@@ -1,13 +1,10 @@
 package core
 
 import (
-	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"io/ioutil"
-	"net/http"
 	"net/url"
 	"sort"
 	"strings"
@@ -143,15 +140,6 @@ func hashSHA256(content []byte) string {
 	h := sha256.New()
 	h.Write(content)
 	return fmt.Sprintf("%x", h.Sum(nil))
-}
-
-func readAndReplaceBody(request *http.Request) []byte {
-	if request.Body == nil {
-		return []byte{}
-	}
-	payload, _ := ioutil.ReadAll(request.Body)
-	request.Body = ioutil.NopCloser(bytes.NewReader(payload))
-	return payload
 }
 
 func concat(delim string, str ...string) string {
