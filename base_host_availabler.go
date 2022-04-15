@@ -33,6 +33,7 @@ func (h *HostAvailabilityScore) String() string {
 type HostAvailablerBase struct {
 	projectID            string
 	fetchHostsHTTPClient *fasthttp.Client
+	defaultHosts         []string
 	hostConfig           map[string][]string
 	hostScorer           HostScorer
 	stop                 chan bool
@@ -70,6 +71,7 @@ func (a *HostAvailablerBase) init(defaultHosts []string) {
 //   }
 // }
 func (a *HostAvailablerBase) setHosts(hosts []string) {
+	a.defaultHosts = hosts
 	a.hostConfig = map[string][]string{
 		"*": hosts,
 	}
@@ -206,7 +208,7 @@ func (a *HostAvailablerBase) scheduleFetchHostsFromServer() {
 }
 
 func (a *HostAvailablerBase) fetchHostsFromServer() {
-	url := fmt.Sprintf("http://%s/data/api/sdk/host?project_id=%s", a.GetHost("*"), a.projectID)
+	url := fmt.Sprintf("http://%s/data/api/sdk/host?project_id=%s", a.defaultHosts[0], a.projectID)
 	for i := 0; i < 3; i++ {
 		rspHostConfig := a.doFetchHostsFromServer(url)
 		if rspHostConfig == nil {
