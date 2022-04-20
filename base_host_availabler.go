@@ -218,7 +218,7 @@ func (a *HostAvailablerBase) fetchHostsFromServer() {
 			logs.Debug("hosts from server are not changed, url: %s config: %+v", url, rspHostConfig)
 			return
 		}
-		if hosts, exist := rspHostConfig["*"]; exist || len(hosts) == 0 {
+		if hosts, exist := rspHostConfig["*"]; !exist || len(hosts) == 0 {
 			logs.Warn("no default value in hosts from server, url: %s, config: %+v", url, rspHostConfig)
 			return
 		}
