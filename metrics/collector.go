@@ -7,14 +7,17 @@ import (
 	"sync"
 	"time"
 
-	core "github.com/byteplus-sdk/byteplus-sdk-go-rec-core"
 	"github.com/byteplus-sdk/byteplus-sdk-go-rec-core/logs"
 	"github.com/byteplus-sdk/byteplus-sdk-go-rec-core/metrics/protocol"
 	"github.com/valyala/fasthttp"
 )
 
+type HostReader interface {
+	GetHost(path string) string
+}
+
 var (
-	Collector *collector
+	Collector = &collector{}
 )
 
 type Config struct {
@@ -46,6 +49,24 @@ func NewConfig() *Config {
 	}
 }
 
+func fillDefaultCfg(cfg *Config) {
+	if len(cfg.Domain) == 0 {
+		cfg.Domain = defaultMetricsDomain
+	}
+	if len(cfg.Prefix) == 0 {
+		cfg.Prefix = defaultMetricsPrefix
+	}
+	if len(cfg.HTTPSchema) == 0 {
+		cfg.HTTPSchema = defaultMetricsHTTPSchema
+	}
+	if cfg.ReportInterval <= 0 {
+		cfg.ReportInterval = defaultReportInterval
+	}
+	if cfg.HTTPTimeout <= 0 {
+		cfg.HTTPTimeout = defaultHTTPTimeout
+	}
+}
+
 type collector struct {
 	cfg                         *Config
 	reporter                    *reporter
@@ -54,38 +75,54 @@ type collector struct {
 	cleaningMetricsCollector    bool
 	cleaningMetricsLogCollector bool
 	initialed                   bool
-	hostAvailabler              core.HostAvailabler
+	hostReader                  HostReader
 	lock                        *sync.Mutex
 }
 
-func (c *collector) Init(cfg *Config, hostAvailabler core.HostAvailabler) {
+func (c *collector) Init(cfg *Config, hostReader HostReader) {
 	if c.initialed {
 		return
 	}
 	if cfg == nil {
 		cfg = NewConfig()
 	}
-	c.cfg = cfg
-	c.hostAvailabler = hostAvailabler
+	fillDefaultCfg(cfg)
 	c.lock = &sync.Mutex{}
-	c.doInit()
+	c.doInit(cfg, hostReader)
 }
 
-func (c *collector) doInit() {
+func (c *collector) InitWithOptions(opts ...Option) {
+	if c.initialed {
+		return
+	}
+	cfg := NewConfig()
+	for _, opt := range opts {
+		opt(cfg)
+	}
+	c.lock = &sync.Mutex{}
+	c.doInit(cfg, nil)
+}
+
+func (c *collector) doInit(cfg *Config, hostReader HostReader) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	if c.initialed {
 		return
 	}
+	c.cfg = cfg
+	c.hostReader = hostReader
 	// initialize metrics reporter
 	c.reporter = &reporter{
-		httpCli:    &fasthttp.Client{},
+		httpCli: &fasthttp.Client{
+			MaxIdleConnDuration: 60 * time.Second,
+		},
 		metricsCfg: c.cfg,
 	}
 	// initialize metrics collector
 	c.metricsCollector = make(chan *protocol.Metric, maxMetricsSize)
 	c.metricsLogCollector = make(chan *protocol.MetricLog, maxMetricsLogSize)
 	if !c.isEnableMetrics() && !c.isEnableMetricsLog() {
+		c.initialed = true
 		return
 	}
 	c.startReport()
@@ -202,10 +239,10 @@ func (c *collector) reportMetrics() {
 }
 
 func (c *collector) getDomain(path string) string {
-	if c.hostAvailabler == nil {
+	if c.hostReader == nil {
 		return c.cfg.Domain
 	}
-	return c.hostAvailabler.GetHost(path)
+	return c.hostReader.GetHost(path)
 }
 
 func (c *collector) doReportMetrics(metrics []*protocol.Metric) {

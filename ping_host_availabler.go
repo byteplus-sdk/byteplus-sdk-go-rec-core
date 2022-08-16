@@ -2,7 +2,6 @@ package core
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/byteplus-sdk/byteplus-sdk-go-rec-core/logs"
@@ -10,9 +9,11 @@ import (
 )
 
 const (
-	defaultPingURLFormat = "http://%s/predict/api/ping"
-	defaultWindowSize    = 60
-	defaultPingTimeout   = 300 * time.Millisecond
+	defaultPingURLFormat     = "http://%s/predict/api/ping"
+	defaultWindowSize        = 60
+	defaultPingTimeout       = 300 * time.Millisecond
+	defaultPingInterval      = time.Second
+	defaultFetchHostInterval = 10 * time.Second
 )
 
 type PingHostAvailablerConfig struct {
@@ -24,6 +25,10 @@ type PingHostAvailablerConfig struct {
 	WindowSize int
 	// timeout for requesting hosts
 	PingTimeout time.Duration
+	// The time interval for pingHostAvailabler to do ping
+	PingInterval time.Duration
+	// Frequency of pulling hosts
+	FetchHostInterval time.Duration
 }
 
 type pingHostAvailabler struct {
@@ -36,14 +41,18 @@ type pingHostAvailabler struct {
 func NewPingHostAvailabler(hosts []string, projectID string,
 	config *PingHostAvailablerConfig) (HostAvailabler, error) {
 	hostAvailabler := &pingHostAvailabler{
-		config:        fillDefaultConfig(config),
-		httpCli:       &fasthttp.Client{},
+		config: fillDefaultConfig(config),
+		httpCli: &fasthttp.Client{
+			MaxIdleConnDuration: defaultKeepAliveDuration,
+		},
 		hostWindowMap: make(map[string]*window, len(hosts)),
 	}
 	hostAvailablerBase, err := NewHostAvailablerBase(
 		hosts,
 		projectID,
 		hostAvailabler,
+		hostAvailabler.config.FetchHostInterval,
+		hostAvailabler.config.PingInterval,
 	)
 	if err != nil {
 		return nil, err
@@ -65,6 +74,12 @@ func fillDefaultConfig(config *PingHostAvailablerConfig) *PingHostAvailablerConf
 	if config.WindowSize <= 0 {
 		config.WindowSize = defaultWindowSize
 	}
+	if config.PingInterval <= 0 {
+		config.PingInterval = defaultPingInterval
+	}
+	if config.FetchHostInterval <= 0 {
+		config.FetchHostInterval = defaultFetchHostInterval
+	}
 	return config
 }
 
@@ -81,50 +96,14 @@ func (receiver *pingHostAvailabler) ScoreHosts(hosts []string) []*HostAvailabili
 			window = newWindow(receiver.config.WindowSize)
 			receiver.hostWindowMap[host] = window
 		}
-		window.put(receiver.doPing(host))
+		window.put(Ping(receiver.projectID, receiver.httpCli, receiver.config.PingUrlFormat,
+			"http", host, receiver.config.PingTimeout))
 	}
 	for i, host := range hosts {
 		score := 1 - receiver.hostWindowMap[host].failureRate()
 		result[i] = &HostAvailabilityScore{host, score}
 	}
 	return result
-}
-
-func (receiver *pingHostAvailabler) doPing(host string) bool {
-	request := fasthttp.AcquireRequest()
-	response := fasthttp.AcquireResponse()
-	defer func() {
-		fasthttp.ReleaseRequest(request)
-		fasthttp.ReleaseResponse(response)
-	}()
-	url := fmt.Sprintf(receiver.config.PingUrlFormat, host)
-	request.SetRequestURI(url)
-	request.Header.SetMethod(fasthttp.MethodGet)
-	start := time.Now()
-	err := receiver.httpCli.DoTimeout(request, response, receiver.config.PingTimeout)
-	cost := time.Now().Sub(start)
-	if err != nil {
-		logs.Warn("ping find err, host:%s cost:%s err:%v", host, cost, err)
-		return false
-	}
-	if receiver.isPingSuccess(response) {
-		logs.Debug("ping success host:%s cost:%s", host, cost)
-		return true
-	}
-	logs.Warn("ping fail, host:%s cost:%s status:%d", host, cost, response.StatusCode())
-	return false
-}
-
-func (receiver *pingHostAvailabler) isPingSuccess(httpRsp *fasthttp.Response) bool {
-	if httpRsp.StatusCode() != fasthttp.StatusOK {
-		return false
-	}
-	rspBodyBytes := httpRsp.Body()
-	if len(rspBodyBytes) == 0 {
-		return false
-	}
-	rspStr := string(rspBodyBytes)
-	return len(rspStr) < 20 && strings.Contains(rspStr, "pong")
 }
 
 func newWindow(size int) *window {

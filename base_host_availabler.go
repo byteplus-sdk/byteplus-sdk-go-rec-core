@@ -12,6 +12,8 @@ import (
 )
 
 type HostAvailabler interface {
+	GetHosts() []string
+
 	GetHost(path string) string
 
 	Shutdown()
@@ -39,7 +41,8 @@ type HostAvailablerBase struct {
 	stop                 chan bool
 }
 
-func NewHostAvailablerBase(defaultHosts []string, projectID string, hostScorer HostScorer) (*HostAvailablerBase, error) {
+func NewHostAvailablerBase(defaultHosts []string, projectID string,
+	hostScorer HostScorer, fetchHostInterval, scoreHostInterval time.Duration) (*HostAvailablerBase, error) {
 	if len(defaultHosts) == 0 {
 		return nil, errors.New("default hosts are empty")
 	}
@@ -48,19 +51,19 @@ func NewHostAvailablerBase(defaultHosts []string, projectID string, hostScorer H
 		projectID:  projectID,
 		hostScorer: hostScorer,
 	}
-	hostAvailablerBase.init(defaultHosts)
+	hostAvailablerBase.init(defaultHosts, fetchHostInterval, scoreHostInterval)
 	return hostAvailablerBase, nil
 }
 
-func (a *HostAvailablerBase) init(defaultHosts []string) {
+func (a *HostAvailablerBase) init(defaultHosts []string, fetchHostInterval, scoreHostInterval time.Duration) {
 	a.setHosts(defaultHosts)
 	a.stop = make(chan bool)
 	if len(a.projectID) > 0 {
 		a.fetchHostsHTTPClient = &fasthttp.Client{}
 		a.fetchHostsFromServer()
-		a.scheduleFetchHostsFromServer()
+		a.scheduleFetchHostsFromServer(fetchHostInterval)
 	}
-	a.scheduleScoreAndUpdateHosts()
+	a.scheduleScoreAndUpdateHosts(scoreHostInterval)
 }
 
 // setHosts
@@ -85,9 +88,9 @@ func (a *HostAvailablerBase) stopFetchHostsFromServer() {
 	}
 }
 
-func (a *HostAvailablerBase) scheduleScoreAndUpdateHosts() {
+func (a *HostAvailablerBase) scheduleScoreAndUpdateHosts(scoreHostInterval time.Duration) {
 	AsyncExecute(func() {
-		ticker := time.NewTicker(time.Second)
+		ticker := time.NewTicker(scoreHostInterval)
 		for true {
 			select {
 			case <-a.stop:
@@ -192,9 +195,9 @@ func (a *HostAvailablerBase) isEqualHosts(hostsA, hostsB []string) bool {
 	return true
 }
 
-func (a *HostAvailablerBase) scheduleFetchHostsFromServer() {
+func (a *HostAvailablerBase) scheduleFetchHostsFromServer(fetchHostInterval time.Duration) {
 	AsyncExecute(func() {
-		ticker := time.NewTicker(time.Second * 10)
+		ticker := time.NewTicker(fetchHostInterval)
 		for true {
 			select {
 			case <-a.stop:
@@ -297,6 +300,10 @@ func (a *HostAvailablerBase) containsAll(hosts []string, hosts2 []string) bool {
 		}
 	}
 	return true
+}
+
+func (a *HostAvailablerBase) GetHosts() []string {
+	return a.distinctHosts(a.hostConfig)
 }
 
 func (a *HostAvailablerBase) GetHost(path string) string {

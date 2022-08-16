@@ -3,8 +3,9 @@ package core
 import (
 	"errors"
 
+	"github.com/byteplus-sdk/byteplus-sdk-go-rec-core/metrics"
+
 	"github.com/byteplus-sdk/byteplus-sdk-go-rec-core/option"
-	"github.com/valyala/fasthttp"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -29,20 +30,25 @@ func (h *HTTPClient) DoPBRequest(path string, request proto.Message,
 
 func (h *HTTPClient) Shutdown() {
 	h.hostAvailabler.Shutdown()
+	h.cli.shutdown()
 }
 
 type httpClientBuilder struct {
-	tenantID       string
-	projectID      string
-	useAirAuth     bool
-	airAuthToken   string
-	authAK         string
-	authSK         string
-	authService    string
-	schema         string
-	hosts          []string
-	region         IRegion
-	hostAvailabler HostAvailabler
+	tenantID              string
+	projectID             string
+	useAirAuth            bool
+	airAuthToken          string
+	authAK                string
+	authSK                string
+	authService           string
+	schema                string
+	hosts                 []string
+	region                IRegion
+	keepAlive             bool
+	hostAvailablerFactory HostAvailablerFactory
+	callerConfig          *CallerConfig
+	hostAvailabler        HostAvailabler
+	metricsCfg            *metrics.Config
 }
 
 func NewHTTPClientBuilder() *httpClientBuilder {
@@ -99,8 +105,29 @@ func (receiver *httpClientBuilder) Region(region IRegion) *httpClientBuilder {
 	return receiver
 }
 
+func (receiver *httpClientBuilder) HostAvailablerFactory(
+	hostAvailablerFactory HostAvailablerFactory) *httpClientBuilder {
+	receiver.hostAvailablerFactory = hostAvailablerFactory
+	return receiver
+}
+
+func (receiver *httpClientBuilder) KeepAlive(keepAlive bool) *httpClientBuilder {
+	receiver.keepAlive = keepAlive
+	return receiver
+}
+
+func (receiver *httpClientBuilder) CallerConfig(callerConfig *CallerConfig) *httpClientBuilder {
+	receiver.callerConfig = callerConfig
+	return receiver
+}
+
 func (receiver *httpClientBuilder) HostAvailabler(hostAvailabler HostAvailabler) *httpClientBuilder {
 	receiver.hostAvailabler = hostAvailabler
+	return receiver
+}
+
+func (receiver *httpClientBuilder) MetricsCfg(metricsConfig *metrics.Config) *httpClientBuilder {
+	receiver.metricsCfg = metricsConfig
 	return receiver
 }
 
@@ -110,6 +137,7 @@ func (receiver *httpClientBuilder) Build() (*HTTPClient, error) {
 		return nil, err
 	}
 	receiver.fillDefault()
+	metrics.Collector.Init(receiver.metricsCfg, receiver.hostAvailabler)
 	return &HTTPClient{
 		cli:            receiver.newHTTPCaller(),
 		hostAvailabler: receiver.hostAvailabler,
@@ -145,16 +173,20 @@ func (receiver *httpClientBuilder) fillDefault() {
 	if receiver.schema == "" {
 		receiver.schema = "https"
 	}
-	if receiver.hostAvailabler == nil {
-		if len(receiver.hosts) > 0 {
-			receiver.hostAvailabler, _ = NewPingHostAvailabler(receiver.hosts, "", nil)
-		} else {
-			receiver.hostAvailabler, _ = NewPingHostAvailabler(
-				receiver.region.GetHosts(),
-				receiver.projectID,
-				nil,
-			)
-		}
+	// fill hostAvailabler.
+	if receiver.hostAvailablerFactory == nil {
+		receiver.hostAvailablerFactory = &HostAvailablerFactoryBase{}
+	}
+	if len(receiver.hosts) > 0 {
+		receiver.hostAvailabler, _ = receiver.hostAvailablerFactory.NewHostAvailabler(
+			"", receiver.hosts)
+	} else {
+		receiver.hostAvailabler, _ = receiver.hostAvailablerFactory.NewHostAvailabler(
+			receiver.projectID, receiver.region.GetHosts())
+	}
+	// fill default caller config.
+	if receiver.callerConfig == nil {
+		receiver.callerConfig = fillDefaultCallerConfig(&CallerConfig{})
 	}
 }
 
@@ -166,12 +198,16 @@ func (receiver *httpClientBuilder) newHTTPCaller() *httpCaller {
 		service:         receiver.authService,
 		region:          authRegion,
 	}
-	mHTTPCaller := &httpCaller{
-		tenantID:     receiver.tenantID,
-		useAirAuth:   receiver.useAirAuth,
-		credentials:  cred,
-		airAuthToken: receiver.airAuthToken,
-		httpCli:      &fasthttp.Client{},
-	}
+	mHTTPCaller := newHTTPCaller(
+		receiver.projectID,
+		receiver.tenantID,
+		receiver.useAirAuth,
+		receiver.airAuthToken,
+		cred,
+		receiver.hostAvailabler,
+		receiver.callerConfig,
+		receiver.schema,
+		receiver.keepAlive,
+	)
 	return mHTTPCaller
 }

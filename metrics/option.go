@@ -2,8 +2,6 @@ package metrics
 
 import (
 	"time"
-
-	core "github.com/byteplus-sdk/byteplus-sdk-go-rec-core"
 )
 
 type Option func(config *Config)
@@ -27,7 +25,7 @@ func WithMetricsPrefix(prefix string) Option {
 func WithMetricsHTTPSchema(schema string) Option {
 	return func(config *Config) {
 		if schema == "http" || schema == "https" {
-			config.HttpSchema = schema
+			config.HTTPSchema = schema
 		}
 	}
 }
@@ -58,12 +56,6 @@ func WithReportInterval(reportInterval time.Duration) Option {
 
 func WithMetricsTimeout(timeout time.Duration) Option {
 	return func(config *Config) {
-		config.HttpTimeout = timeout
-	}
-}
-
-func WithMetricsRegion(region core.IRegion) Option {
-	return func(config *Config) {
-		config.Domain = region.GetHosts()[0]
+		config.HTTPTimeout = timeout
 	}
 }
