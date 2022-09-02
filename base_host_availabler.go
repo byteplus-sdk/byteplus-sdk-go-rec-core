@@ -327,7 +327,7 @@ func (a *HostAvailablerBase) doFetchHostsFromServer(reqID, url string) map[strin
 		"url:" + escapeMetricsTagValue(url),
 	}
 	metrics.Counter(metricsKeyRequestCount, 1, metricsTags...)
-	metrics.Counter(metricsKeyRequestTotalCost, cost.Milliseconds(), metricsTags...)
+	metrics.Timer(metricsKeyRequestTotalCost, cost.Milliseconds(), metricsTags...)
 	logFormat := "[ByteplusSDK][Fetch] fetch host from server, project_id:%s, cost:%dms, rsp:%s"
 	metrics.Info(reqID, logFormat, a.projectID, cost.Milliseconds(), rspBytes)
 	logs.Debug("fetch host from server, cost:%dms rsp:%s", cost.Milliseconds(), rspBytes)

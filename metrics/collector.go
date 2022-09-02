@@ -286,8 +286,8 @@ func (c *collector) doReportMetricsLogs(metricLogs []*protocol.MetricLog) {
 func recoverTags(tagKvs ...string) map[string]string {
 	tagKvMap := make(map[string]string)
 	for _, kv := range tagKvs {
-		res := strings.Split(kv, ":")
-		if len(res) != 2 {
+		res := strings.SplitN(kv, ":", 2)
+		if len(res) < 2 {
 			continue
 		}
 		tagKvMap[res[0]] = res[1]

@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"sync"
 
 	"github.com/byteplus-sdk/byteplus-sdk-go-rec-core/metrics"
 
@@ -131,13 +132,19 @@ func (receiver *httpClientBuilder) MetricsCfg(metricsConfig *metrics.Config) *ht
 	return receiver
 }
 
+var (
+	globalHostAvailablerLock                = &sync.Mutex{}
+	globalHostAvailabler     HostAvailabler = nil
+)
+
 func (receiver *httpClientBuilder) Build() (*HTTPClient, error) {
 	err := receiver.checkRequiredField()
 	if err != nil {
 		return nil, err
 	}
 	receiver.fillDefault()
-	metrics.Collector.Init(receiver.metricsCfg, receiver.hostAvailabler)
+	receiver.initGlobalHostAvailabler()
+	metrics.Collector.Init(receiver.metricsCfg, globalHostAvailabler)
 	return &HTTPClient{
 		cli:            receiver.newHTTPCaller(),
 		hostAvailabler: receiver.hostAvailabler,
@@ -177,17 +184,28 @@ func (receiver *httpClientBuilder) fillDefault() {
 	if receiver.hostAvailablerFactory == nil {
 		receiver.hostAvailablerFactory = &HostAvailablerFactoryBase{}
 	}
-	if len(receiver.hosts) > 0 {
-		receiver.hostAvailabler, _ = receiver.hostAvailablerFactory.NewHostAvailabler(
-			"", receiver.hosts)
-	} else {
-		receiver.hostAvailabler, _ = receiver.hostAvailablerFactory.NewHostAvailabler(
-			receiver.projectID, receiver.region.GetHosts())
-	}
+	receiver.hostAvailabler, _ = receiver.newHostAvailabler()
+
 	// fill default caller config.
 	if receiver.callerConfig == nil {
 		receiver.callerConfig = fillDefaultCallerConfig(&CallerConfig{})
 	}
+}
+
+func (receiver *httpClientBuilder) newHostAvailabler() (HostAvailabler, error) {
+	if len(receiver.hosts) > 0 {
+		return receiver.hostAvailablerFactory.NewHostAvailabler("", receiver.hosts)
+	}
+	return receiver.hostAvailablerFactory.NewHostAvailabler(receiver.projectID, receiver.region.GetHosts())
+}
+
+func (receiver *httpClientBuilder) initGlobalHostAvailabler() {
+	globalHostAvailablerLock.Lock()
+	defer globalHostAvailablerLock.Unlock()
+	if globalHostAvailabler != nil {
+		return
+	}
+	globalHostAvailabler, _ = receiver.newHostAvailabler()
 }
 
 func (receiver *httpClientBuilder) newHTTPCaller() *httpCaller {

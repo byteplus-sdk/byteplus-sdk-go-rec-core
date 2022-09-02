@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/byteplus-sdk/byteplus-sdk-go-rec-core/logs"
-
 	"github.com/byteplus-sdk/byteplus-sdk-go-rec-core/metrics/protocol"
 	"github.com/valyala/fasthttp"
 	"google.golang.org/protobuf/proto"
@@ -51,7 +49,6 @@ func (r *reporter) doRequest(url string, reqBytes []byte, headers map[string]str
 
 	for i := 0; i < maxTryTimes; i++ {
 		err = r.httpCli.DoTimeout(request, response, r.metricsCfg.HTTPTimeout)
-		logs.Info("[Reporter]: do report, url: %s, resp: %s", url, response.Body())
 		if err == nil {
 			if response.StatusCode() == fasthttp.StatusOK {
 				return nil

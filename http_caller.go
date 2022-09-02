@@ -294,7 +294,7 @@ func (c *httpCaller) doHTTPRequest(reqID, url string, headers map[string]string,
 			"url:" + escapeMetricsTagValue(url),
 		}
 		metrics.Timer(metricsKeyRequestTotalCost, cost.Milliseconds(), metricsTags...)
-		metrics.Timer(metricsKeyRequestCount, 1, metricsTags...)
+		metrics.Counter(metricsKeyRequestCount, 1, metricsTags...)
 		metrics.Info(reqID, "[ByteplusSDK] http request success project_id:%s, http url:%s, cost:%dms",
 			c.projectID, url, cost.Milliseconds())
 		logs.Debug("http url:%s, cost:%dms", url, cost.Milliseconds())
