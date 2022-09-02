@@ -108,13 +108,21 @@ func (c *httpCaller) heartbeat() {
 func (c *httpCaller) doJSONRequest(url string, request interface{},
 	response interface{}, options *option.Options) error {
 	reqBytes, err := json.Marshal(request)
+	headers := c.buildHeaders(options, "application/json")
+	reqID, _ := headers["Request-Id"]
 	if err != nil {
+		metricsTags := []string{
+			"type:marshal_json_request_fail",
+			"project_id:" + c.projectID,
+			"url:" + escapeMetricsTagValue(url),
+		}
+		metrics.Counter(metricsKeyCommonError, 1, metricsTags...)
+		metrics.Error(reqID, "[ByteplusSDK] marshal json request fail, project_id:%s, url:%s err:%v",
+			c.projectID, url, err)
 		logs.Error("json marshal request fail, err:%v url:%s", err, url)
 		return err
 	}
-	headers := c.buildHeaders(options, "application/json")
 	url = c.withOptionQueries(options, url)
-	reqID, _ := headers["Request-Id"]
 	rspBytes, err := c.doHTTPRequest(reqID, url, headers, reqBytes, options.Timeout)
 	if err != nil {
 		return err
@@ -138,13 +146,21 @@ func (c *httpCaller) doJSONRequest(url string, request interface{},
 func (c *httpCaller) doPBRequest(url string, request proto.Message,
 	response proto.Message, options *option.Options) error {
 	reqBytes, err := proto.Marshal(request)
+	headers := c.buildHeaders(options, "application/x-protobuf")
+	reqID, _ := headers["Request-Id"]
 	if err != nil {
+		metricsTags := []string{
+			"type:marshal_pb_request_fail",
+			"project_id:" + c.projectID,
+			"url:" + escapeMetricsTagValue(url),
+		}
+		metrics.Counter(metricsKeyCommonError, 1, metricsTags...)
+		metrics.Error(reqID, "[ByteplusSDK] marshal pb request fail, project_id:%s, url:%s err:%v",
+			c.projectID, url, err)
 		logs.Error("marshal request fail, err:%v url:%s", err, url)
 		return err
 	}
-	headers := c.buildHeaders(options, "application/x-protobuf")
 	url = c.withOptionQueries(options, url)
-	reqID, _ := headers["Request-Id"]
 	rspBytes, err := c.doHTTPRequest(reqID, url, headers, reqBytes, options.Timeout)
 	if err != nil {
 		return err
@@ -278,6 +294,7 @@ func (c *httpCaller) doHTTPRequest(reqID, url string, headers map[string]string,
 			"url:" + escapeMetricsTagValue(url),
 		}
 		metrics.Timer(metricsKeyRequestTotalCost, cost.Milliseconds(), metricsTags...)
+		metrics.Timer(metricsKeyRequestCount, 1, metricsTags...)
 		metrics.Info(reqID, "[ByteplusSDK] http request success project_id:%s, http url:%s, cost:%dms",
 			c.projectID, url, cost.Milliseconds())
 		logs.Debug("http url:%s, cost:%dms", url, cost.Milliseconds())

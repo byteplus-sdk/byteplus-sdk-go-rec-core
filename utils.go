@@ -66,7 +66,7 @@ func Ping(projectID string, httpCli *fasthttp.Client, pingURLFormat,
 	url := fmt.Sprintf(pingURLFormat, schema, host)
 	request.SetRequestURI(url)
 	request.Header.SetMethod(fasthttp.MethodGet)
-	reqID := uuid.NewString()
+	reqID := "ping_" + uuid.NewString()
 	request.Header.Set("Request-Id", reqID)
 	request.Header.Set("Project-Id", projectID)
 	start := time.Now()

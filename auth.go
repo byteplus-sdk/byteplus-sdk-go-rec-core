@@ -147,39 +147,44 @@ func concat(delim string, str ...string) string {
 }
 
 func normURI(uri string) string {
-	parts := strings.Split(uri, "/")
-	for i := range parts {
-		parts[i] = encodePathFrag(parts[i])
+	pathParts := strings.Split(uri, "/")
+	for i, pathPart := range pathParts {
+		pathParts[i] = encodePathPart(pathPart)
 	}
-	return strings.Join(parts, "/")
+	return strings.Join(pathParts, "/")
 }
 
-func encodePathFrag(s string) string {
-	hexCount := 0
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if shouldEscape(c) {
-			hexCount++
+const (
+	escapeStandardStr = "0123456789ABCDEF"
+)
+
+func encodePathPart(pathPart string) string {
+	pathPartLength := len(pathPart)
+	needEscapeCharacterCount := 0
+	for i := 0; i < pathPartLength; i++ {
+		ch := pathPart[i]
+		if needEscape(ch) {
+			needEscapeCharacterCount++
 		}
 	}
-	t := make([]byte, len(s)+2*hexCount)
-	j := 0
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if shouldEscape(c) {
-			t[j] = '%'
-			t[j+1] = "0123456789ABCDEF"[c>>4]
-			t[j+2] = "0123456789ABCDEF"[c&15]
-			j += 3
+	resultBytes := make([]byte, pathPartLength+2*needEscapeCharacterCount)
+	currentIdx := 0
+	for i := 0; i < pathPartLength; i++ {
+		ch := pathPart[i]
+		if needEscape(ch) {
+			resultBytes[currentIdx] = '%'
+			resultBytes[currentIdx+1] = escapeStandardStr[ch>>4]
+			resultBytes[currentIdx+2] = escapeStandardStr[ch&15]
+			currentIdx += 3
 		} else {
-			t[j] = c
-			j++
+			resultBytes[currentIdx] = ch
+			currentIdx++
 		}
 	}
-	return string(t)
+	return string(resultBytes)
 }
 
-func shouldEscape(c byte) bool {
+func needEscape(c byte) bool {
 	if 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' {
 		return false
 	}

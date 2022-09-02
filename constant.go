@@ -29,7 +29,10 @@ const (
 
 const (
 	// Metrics Key
+	metricsKeyCommonInfo       = "common.info"
+	metricsKeyCommonWarn       = "common.warn"
 	metricsKeyCommonError      = "common.err"
 	metricsKeyRequestTotalCost = "request.total.cost"
+	metricsKeyRequestCount     = "request.count"
 	metricsKeyHeartbeatCount   = "heartbeat.count"
 )
