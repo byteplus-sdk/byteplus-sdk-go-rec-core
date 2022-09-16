@@ -143,7 +143,9 @@ func (receiver *httpClientBuilder) Build() (*HTTPClient, error) {
 		return nil, err
 	}
 	receiver.fillDefault()
-	receiver.initGlobalHostAvailabler()
+	if !metrics.Collector.IsInitialed() && (receiver.metricsCfg.EnableMetrics || receiver.metricsCfg.EnableMetricsLog) {
+		receiver.initGlobalHostAvailabler()
+	}
 	metrics.Collector.Init(receiver.metricsCfg, globalHostAvailabler)
 	return &HTTPClient{
 		cli:            receiver.newHTTPCaller(),

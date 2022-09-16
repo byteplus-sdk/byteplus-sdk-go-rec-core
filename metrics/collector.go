@@ -129,6 +129,10 @@ func (c *collector) doInit(cfg *Config, hostReader HostReader) {
 	c.initialed = true
 }
 
+func (c *collector) IsInitialed() bool {
+	return c.initialed
+}
+
 func (c *collector) isEnableMetrics() bool {
 	if c.cfg == nil {
 		return false
