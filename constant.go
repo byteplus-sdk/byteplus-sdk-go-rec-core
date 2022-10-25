@@ -1,5 +1,7 @@
 package core
 
+import "time"
+
 const (
 	// All requests will have a XXXResponse corresponding to them,
 	// and a‘ll XXXResponses will contain a 'Status' field.
@@ -17,4 +19,20 @@ const (
 
 	// StatusCodeTooManyRequest The server hope slow down request frequency, and this request was rejected
 	StatusCodeTooManyRequest = 429
+)
+
+const (
+	// The default keepalive duration
+	defaultKeepAliveDuration     = 60 * time.Second
+	defaultKeepAlivePingInterval = 45 * time.Second
+)
+
+const (
+	// Metrics Key
+	metricsKeyCommonInfo       = "common.info"
+	metricsKeyCommonWarn       = "common.warn"
+	metricsKeyCommonError      = "common.err"
+	metricsKeyRequestTotalCost = "request.total.cost"
+	metricsKeyRequestCount     = "request.count"
+	metricsKeyHeartbeatCount   = "heartbeat.count"
 )

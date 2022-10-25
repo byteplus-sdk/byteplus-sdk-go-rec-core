@@ -7,11 +7,16 @@ import (
 	"sort"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/byteplus-sdk/byteplus-sdk-go-rec-core/logs"
+	"github.com/byteplus-sdk/byteplus-sdk-go-rec-core/metrics"
 	"github.com/valyala/fasthttp"
 )
 
 type HostAvailabler interface {
+	GetHosts() []string
+
 	GetHost(path string) string
 
 	Shutdown()
@@ -39,7 +44,8 @@ type HostAvailablerBase struct {
 	stop                 chan bool
 }
 
-func NewHostAvailablerBase(defaultHosts []string, projectID string, hostScorer HostScorer) (*HostAvailablerBase, error) {
+func NewHostAvailablerBase(defaultHosts []string, projectID string,
+	hostScorer HostScorer, fetchHostInterval, scoreHostInterval time.Duration) (*HostAvailablerBase, error) {
 	if len(defaultHosts) == 0 {
 		return nil, errors.New("default hosts are empty")
 	}
@@ -48,19 +54,19 @@ func NewHostAvailablerBase(defaultHosts []string, projectID string, hostScorer H
 		projectID:  projectID,
 		hostScorer: hostScorer,
 	}
-	hostAvailablerBase.init(defaultHosts)
+	hostAvailablerBase.init(defaultHosts, fetchHostInterval, scoreHostInterval)
 	return hostAvailablerBase, nil
 }
 
-func (a *HostAvailablerBase) init(defaultHosts []string) {
+func (a *HostAvailablerBase) init(defaultHosts []string, fetchHostInterval, scoreHostInterval time.Duration) {
 	a.setHosts(defaultHosts)
 	a.stop = make(chan bool)
 	if len(a.projectID) > 0 {
 		a.fetchHostsHTTPClient = &fasthttp.Client{}
 		a.fetchHostsFromServer()
-		a.scheduleFetchHostsFromServer()
+		a.scheduleFetchHostsFromServer(fetchHostInterval)
 	}
-	a.scheduleScoreAndUpdateHosts()
+	a.scheduleScoreAndUpdateHosts(scoreHostInterval)
 }
 
 // setHosts
@@ -85,9 +91,9 @@ func (a *HostAvailablerBase) stopFetchHostsFromServer() {
 	}
 }
 
-func (a *HostAvailablerBase) scheduleScoreAndUpdateHosts() {
+func (a *HostAvailablerBase) scheduleScoreAndUpdateHosts(scoreHostInterval time.Duration) {
 	AsyncExecute(func() {
-		ticker := time.NewTicker(time.Second)
+		ticker := time.NewTicker(scoreHostInterval)
 		for true {
 			select {
 			case <-a.stop:
@@ -113,18 +119,35 @@ func (a *HostAvailablerBase) scheduleScoreAndUpdateHosts() {
 //   "*": ["bytedance.com", "byteplus.com"]
 // }
 func (a *HostAvailablerBase) doScoreAndUpdateHosts(hostConfig map[string][]string) {
+	logID := "score_" + uuid.NewString()
 	hosts := a.distinctHosts(hostConfig)
 	newHostScores := a.hostScorer.ScoreHosts(hosts)
+	metrics.Info(logID, "[ByteplusSDK][Score]score hosts, project_id:%s, result:%s", a.projectID, newHostScores)
 	logs.Debug("score hosts result: %s", newHostScores)
 	if len(newHostScores) == 0 {
+		metricsTags := []string{
+			"type:scoring_hosts_return_empty_list",
+			"project_id:" + a.projectID,
+		}
+		metrics.Counter(metricsKeyCommonError, 1, metricsTags...)
+		metrics.Error(logID, "[ByteplusSDK][Score] scoring hosts return an empty list, project_id:%s", a.projectID)
 		logs.Error("scoring hosts return an empty list")
 		return
 	}
 	newHostConfig := a.copyAndSortHost(hostConfig, newHostScores)
 	if a.isHostConfigNotUpdated(hostConfig, newHostConfig) {
+		metrics.Info(logID, "[ByteplusSDK][Score] host order is not changed, project_id:%s, config:%+v",
+			a.projectID, newHostConfig)
 		logs.Debug("host order is not changed, %+v", newHostConfig)
 		return
 	}
+	metricsTags := []string{
+		"type:set_new_host_config",
+		"project_id:" + a.projectID,
+	}
+	metrics.Counter(metricsKeyCommonInfo, 1, metricsTags...)
+	metrics.Info(logID, "[ByteplusSDK][Score] set new host config: %+v, old config: %+v, project_id:%s",
+		newHostConfig, a.hostConfig, a.projectID)
 	logs.Debug("set new host config: %+v, old config: %+v", newHostConfig, a.hostConfig)
 	a.hostConfig = newHostConfig
 }
@@ -192,9 +215,9 @@ func (a *HostAvailablerBase) isEqualHosts(hostsA, hostsB []string) bool {
 	return true
 }
 
-func (a *HostAvailablerBase) scheduleFetchHostsFromServer() {
+func (a *HostAvailablerBase) scheduleFetchHostsFromServer(fetchHostInterval time.Duration) {
 	AsyncExecute(func() {
-		ticker := time.NewTicker(time.Second * 10)
+		ticker := time.NewTicker(fetchHostInterval)
 		for true {
 			select {
 			case <-a.stop:
@@ -209,26 +232,45 @@ func (a *HostAvailablerBase) scheduleFetchHostsFromServer() {
 
 func (a *HostAvailablerBase) fetchHostsFromServer() {
 	url := fmt.Sprintf("http://%s/data/api/sdk/host?project_id=%s", a.defaultHosts[0], a.projectID)
+	reqID := "fetch_" + uuid.NewString()
 	for i := 0; i < 3; i++ {
-		rspHostConfig := a.doFetchHostsFromServer(url)
+		rspHostConfig := a.doFetchHostsFromServer(reqID, url)
 		if rspHostConfig == nil {
 			continue
 		}
 		if a.isServerHostsNotUpdated(rspHostConfig) {
+			logFormat := "[ByteplusSDK][Fetch] hosts from server are not changed, project_id:%s, url: %s config: %+v"
+			metrics.Info(reqID, logFormat, a.projectID, url, rspHostConfig)
 			logs.Debug("hosts from server are not changed, url: %s config: %+v", url, rspHostConfig)
 			return
 		}
 		if hosts, exist := rspHostConfig["*"]; !exist || len(hosts) == 0 {
+			metricsTags := []string{
+				"type:no_default_hosts",
+				"project_id:" + a.projectID,
+				"url:" + escapeMetricsTagValue(url),
+			}
+			metrics.Counter(metricsKeyCommonWarn, 1, metricsTags...)
+			logFormat := "[ByteplusSDK][Fetch] no default value in hosts from server, project_id:%s, url: %s, config: %+v"
+			metrics.Warn(reqID, logFormat, a.projectID, url, rspHostConfig)
 			logs.Warn("no default value in hosts from server, url: %s, config: %+v", url, rspHostConfig)
 			return
 		}
 		a.doScoreAndUpdateHosts(rspHostConfig)
 		return
 	}
+	metricsTags := []string{
+		"type:fetch_host_fail_although_retried",
+		"project_id:" + a.projectID,
+		"url:" + escapeMetricsTagValue(url),
+	}
+	metrics.Counter(metricsKeyCommonError, 1, metricsTags...)
+	logFormat := "[ByteplusSDK][Fetch] fetch host from server fail although retried, project_id:%s, url: %s"
+	metrics.Warn(reqID, logFormat, a.projectID, url)
 	logs.Warn("fetch host from server fail although retried, url: %s", url)
 }
 
-func (a *HostAvailablerBase) doFetchHostsFromServer(url string) map[string][]string {
+func (a *HostAvailablerBase) doFetchHostsFromServer(reqID, url string) map[string][]string {
 	rspHostConfig := make(map[string][]string)
 	request := fasthttp.AcquireRequest()
 	response := fasthttp.AcquireResponse()
@@ -238,27 +280,70 @@ func (a *HostAvailablerBase) doFetchHostsFromServer(url string) map[string][]str
 	}()
 	request.SetRequestURI(url)
 	request.Header.SetMethod(fasthttp.MethodGet)
+	request.Header.Set("Request-Id", reqID)
 	start := time.Now()
 	err := a.fetchHostsHTTPClient.DoTimeout(request, response, 5*time.Second)
 	cost := time.Now().Sub(start)
 	if err != nil {
-		logs.Warn("fetch host from server fail, url:%s cost:%s err:%v", url, cost, err)
+		metricsTags := []string{
+			"type:fetch_host_fail",
+			"project_id:" + a.projectID,
+			"url:" + escapeMetricsTagValue(url),
+		}
+		metrics.Counter(metricsKeyCommonError, 1, metricsTags...)
+		logFormat := "[ByteplusSDK][Fetch] fetch host from server fail, project_id:%s, url:%s, cost:%dms, err:%v"
+		metrics.Warn(reqID, logFormat, a.projectID, url, cost.Milliseconds(), err)
+		logs.Warn("fetch host from server fail, url:%s cost:%dms err:%v", url, cost.Milliseconds(), err)
 		return nil
 	}
 	if response.StatusCode() == fasthttp.StatusNotFound {
-		logs.Warn("fetch host from server return not found status, cost:%s", cost)
+		metricsTags := []string{
+			"type:fetch_host_status_400",
+			"project_id:" + a.projectID,
+			"url:" + escapeMetricsTagValue(url),
+		}
+		metrics.Counter(metricsKeyCommonError, 1, metricsTags...)
+		logFormat := "[ByteplusSDK][Fetch] fetch host from server return not found status, project_id:%s, cost:%dms"
+		metrics.Warn(reqID, logFormat, a.projectID, cost.Milliseconds())
+		logs.Warn("fetch host from server return not found status, cost:%dms", cost.Milliseconds())
 		return map[string][]string{}
 	}
 	if response.StatusCode() != fasthttp.StatusOK {
-		logs.Warn("fetch host from server return not ok status:%d cost:%s", response.StatusCode(), cost)
+		metricsTags := []string{
+			"type:fetch_host_not_ok",
+			"project_id:" + a.projectID,
+			"url:" + escapeMetricsTagValue(url),
+		}
+		metrics.Counter(metricsKeyCommonError, 1, metricsTags...)
+		logFormat := "[ByteplusSDK][Fetch] fetch host from server return not ok, project_id:%s, status:%d, cost:%dms"
+		metrics.Warn(reqID, logFormat, a.projectID, response.StatusCode(), cost.Milliseconds())
+		logs.Warn("fetch host from server return not ok status:%d cost:%dms", response.StatusCode(),
+			cost.Milliseconds())
 		return nil
 	}
 	rspBytes := response.Body()
-	logs.Debug("fetch host from server, cost:%s rsp:%s", cost, rspBytes)
+	metricsTags := []string{
+		"project_id:" + a.projectID,
+		"url:" + escapeMetricsTagValue(url),
+	}
+	metrics.Counter(metricsKeyRequestCount, 1, metricsTags...)
+	metrics.Timer(metricsKeyRequestTotalCost, cost.Milliseconds(), metricsTags...)
+	logFormat := "[ByteplusSDK][Fetch] fetch host from server, project_id:%s, cost:%dms, rsp:%s"
+	metrics.Info(reqID, logFormat, a.projectID, cost.Milliseconds(), rspBytes)
+	logs.Debug("fetch host from server, cost:%dms rsp:%s", cost.Milliseconds(), rspBytes)
 	if len(rspBytes) > 0 {
 		err = json.Unmarshal(rspBytes, &rspHostConfig)
 		if err != nil {
-			logs.Warn("unmarshal host config from host server fail, url:%s cost:%s err:%v", url, cost, err)
+			metricsTags = []string{
+				"type:unmarshal_host_config_fail",
+				"project_id:" + a.projectID,
+				"url:" + escapeMetricsTagValue(url),
+			}
+			metrics.Counter(metricsKeyCommonError, 1, metricsTags...)
+			logFormat = "[ByteplusSDK][Fetch] unmarshal host config from host server fail, project_id:%s, url:%s, cost:%dms, err:%v"
+			metrics.Error(reqID, logFormat, a.projectID, url, cost.Milliseconds(), err)
+			logs.Warn("unmarshal host config from host server fail, url:%s cost:%dms err:%v",
+				url, cost.Milliseconds(), err)
 			return map[string][]string{}
 		}
 		return rspHostConfig
@@ -297,6 +382,10 @@ func (a *HostAvailablerBase) containsAll(hosts []string, hosts2 []string) bool {
 		}
 	}
 	return true
+}
+
+func (a *HostAvailablerBase) GetHosts() []string {
+	return a.distinctHosts(a.hostConfig)
 }
 
 func (a *HostAvailablerBase) GetHost(path string) string {
