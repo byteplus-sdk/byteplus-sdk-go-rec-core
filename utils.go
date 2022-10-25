@@ -71,7 +71,7 @@ func Ping(projectID string, httpCli *fasthttp.Client, pingURLFormat,
 	request.Header.Set("Project-Id", projectID)
 	start := time.Now()
 	err := httpCli.DoTimeout(request, response, pingTimeout)
-	cost := time.Now().Sub(start)
+	cost := time.Since(start)
 	if err != nil {
 		metrics.Warn(reqID, "[ByteplusSDK] ping find err, project_id:%s, host:%s, cost:%dms, err:%v",
 			projectID, host, cost.Milliseconds(), err)

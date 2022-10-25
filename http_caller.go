@@ -81,7 +81,7 @@ func newHTTPCaller(projectID, tenantID string, useAirAuth bool, airAuthToken str
 func (c *httpCaller) initHeartbeatExecutor() {
 	AsyncExecute(func() {
 		ticker := time.NewTicker(c.config.KeepAlivePingInterval)
-		for true {
+		for {
 			select {
 			case <-c.stop:
 				ticker.Stop()
@@ -109,7 +109,7 @@ func (c *httpCaller) doJSONRequest(url string, request interface{},
 	response interface{}, options *option.Options) error {
 	reqBytes, err := json.Marshal(request)
 	headers := c.buildHeaders(options, "application/json")
-	reqID, _ := headers["Request-Id"]
+	reqID := headers["Request-Id"]
 	if err != nil {
 		metricsTags := []string{
 			"type:marshal_json_request_fail",
@@ -147,7 +147,7 @@ func (c *httpCaller) doPBRequest(url string, request proto.Message,
 	response proto.Message, options *option.Options) error {
 	reqBytes, err := proto.Marshal(request)
 	headers := c.buildHeaders(options, "application/x-protobuf")
-	reqID, _ := headers["Request-Id"]
+	reqID := headers["Request-Id"]
 	if err != nil {
 		metricsTags := []string{
 			"type:marshal_pb_request_fail",
