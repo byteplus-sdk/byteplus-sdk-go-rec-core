@@ -28,6 +28,8 @@ const (
 type CallerConfig struct {
 	KeepAliveDuration     time.Duration
 	KeepAlivePingInterval time.Duration
+	MaxConnection         int
+	MaxConnWaitTimeout    time.Duration
 }
 
 func fillDefaultCallerConfig(callerConfig *CallerConfig) *CallerConfig {
@@ -36,6 +38,9 @@ func fillDefaultCallerConfig(callerConfig *CallerConfig) *CallerConfig {
 	}
 	if callerConfig.KeepAlivePingInterval <= 0 {
 		callerConfig.KeepAlivePingInterval = defaultKeepAlivePingInterval
+	}
+	if callerConfig.MaxConnection <= 0 {
+		callerConfig.MaxConnection = fasthttp.DefaultMaxConnsPerHost
 	}
 	return callerConfig
 }
@@ -70,6 +75,8 @@ func newHTTPCaller(projectID, tenantID string, useAirAuth bool, airAuthToken str
 		keepAlive:      keepAlive,
 		httpCli: &fasthttp.Client{
 			MaxIdleConnDuration: config.KeepAliveDuration,
+			MaxConnsPerHost:     config.MaxConnection,
+			MaxConnWaitTimeout:  config.MaxConnWaitTimeout,
 		},
 	}
 	if keepAlive {
