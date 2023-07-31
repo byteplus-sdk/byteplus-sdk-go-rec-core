@@ -47,17 +47,14 @@ func NewPingHostAvailabler(hosts []string, projectID string,
 		},
 		hostWindowMap: make(map[string]*window, len(hosts)),
 	}
-	hostAvailablerBase, err := NewHostAvailablerBase(
-		hosts,
-		projectID,
-		hostAvailabler,
-		hostAvailabler.config.FetchHostInterval,
-		hostAvailabler.config.PingInterval,
-	)
+	hostAvailabler.HostAvailablerBase = &HostAvailablerBase{
+		projectID:  projectID,
+		hostScorer: hostAvailabler,
+	}
+	err := hostAvailabler.Init(hosts, hostAvailabler.config.FetchHostInterval, hostAvailabler.config.PingInterval)
 	if err != nil {
 		return nil, err
 	}
-	hostAvailabler.HostAvailablerBase = hostAvailablerBase
 	return hostAvailabler, nil
 }
 
