@@ -44,21 +44,10 @@ type HostAvailablerBase struct {
 	stop                 chan bool
 }
 
-func NewHostAvailablerBase(defaultHosts []string, projectID string,
-	hostScorer HostScorer, fetchHostInterval, scoreHostInterval time.Duration) (*HostAvailablerBase, error) {
+func (a *HostAvailablerBase) Init(defaultHosts []string, fetchHostInterval, scoreHostInterval time.Duration) error {
 	if len(defaultHosts) == 0 {
-		return nil, errors.New("default hosts are empty")
+		return errors.New("default hosts are empty")
 	}
-
-	hostAvailablerBase := &HostAvailablerBase{
-		projectID:  projectID,
-		hostScorer: hostScorer,
-	}
-	hostAvailablerBase.init(defaultHosts, fetchHostInterval, scoreHostInterval)
-	return hostAvailablerBase, nil
-}
-
-func (a *HostAvailablerBase) init(defaultHosts []string, fetchHostInterval, scoreHostInterval time.Duration) {
 	a.setHosts(defaultHosts)
 	a.stop = make(chan bool)
 	if len(a.projectID) > 0 {
@@ -67,6 +56,7 @@ func (a *HostAvailablerBase) init(defaultHosts []string, fetchHostInterval, scor
 		a.scheduleFetchHostsFromServer(fetchHostInterval)
 	}
 	a.scheduleScoreAndUpdateHosts(scoreHostInterval)
+	return nil
 }
 
 // setHosts
