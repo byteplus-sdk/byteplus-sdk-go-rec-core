@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	defaultPingURLFormat     = "http://%s/predict/api/ping"
+	defaultPingURLFormat     = "%s://%s/predict/api/ping"
 	defaultWindowSize        = 60
 	defaultPingTimeout       = 300 * time.Millisecond
 	defaultPingInterval      = time.Second
