@@ -125,7 +125,7 @@ func (a *HostAvailablerBase) doScoreAndUpdateHosts(hostConfig map[string][]strin
 		return
 	}
 	newHostConfig := a.copyAndSortHost(hostConfig, newHostScores)
-	if a.isHostConfigNotUpdated(hostConfig, newHostConfig) {
+	if a.isHostConfigNotUpdated(a.hostConfig, newHostConfig) {
 		metrics.Info(logID, "[ByteplusSDK][Score] host order is not changed, project_id:%s, config:%+v",
 			a.projectID, newHostConfig)
 		logs.Debug("host order is not changed, %+v", newHostConfig)
@@ -183,6 +183,9 @@ func (a *HostAvailablerBase) isHostConfigNotUpdated(oldHostConfig, newHostConfig
 	}
 	if newHostConfig == nil {
 		return true
+	}
+	if len(oldHostConfig) != len(newHostConfig) {
+		return false
 	}
 	for path, oldHosts := range a.hostConfig {
 		newHosts := newHostConfig[path]
