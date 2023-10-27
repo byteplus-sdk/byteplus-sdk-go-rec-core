@@ -31,14 +31,19 @@ type HostAvailabilityScore struct {
 	Score float64
 }
 
+// if mainHost success rate is over mainHostAvailableScore, then use mainHost
+const mainHostAvailableScore = 0.9
+
 func (h *HostAvailabilityScore) String() string {
 	return fmt.Sprintf("%+v", *h)
 }
 
 type HostAvailablerBase struct {
 	projectID            string
+	skipFetchHosts       bool
 	fetchHostsHTTPClient *fasthttp.Client
 	defaultHosts         []string
+	mainHost             string
 	hostConfig           map[string][]string
 	hostScorer           HostScorer
 	stop                 chan bool
@@ -50,7 +55,7 @@ func (a *HostAvailablerBase) Init(defaultHosts []string, fetchHostInterval, scor
 	}
 	a.setHosts(defaultHosts)
 	a.stop = make(chan bool)
-	if len(a.projectID) > 0 {
+	if !a.skipFetchHosts {
 		a.fetchHostsHTTPClient = &fasthttp.Client{}
 		a.fetchHostsFromServer()
 		a.scheduleFetchHostsFromServer(fetchHostInterval)
@@ -161,6 +166,11 @@ func (a *HostAvailablerBase) copyAndSortHost(hostConfig map[string][]string,
 	newHostScores []*HostAvailabilityScore) map[string][]string {
 	hostScoreIndex := make(map[string]float64, len(newHostScores))
 	for _, hostScore := range newHostScores {
+		// mainHost is prioritized for use when available
+		if hostScore.Host == a.mainHost && hostScore.Score >= mainHostAvailableScore {
+			// make sure mainHost has the highest score
+			hostScore.Score = 1 + hostScore.Score
+		}
 		hostScoreIndex[hostScore.Host] = hostScore.Score
 	}
 	newHostConfig := make(map[string][]string, len(hostConfig))

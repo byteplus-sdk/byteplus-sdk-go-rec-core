@@ -43,6 +43,7 @@ type httpClientBuilder struct {
 	authSK                string
 	authService           string
 	schema                string
+	mainHost              string
 	hosts                 []string
 	region                IRegion
 	keepAlive             bool
@@ -98,6 +99,11 @@ func (receiver *httpClientBuilder) Schema(schema string) *httpClientBuilder {
 
 func (receiver *httpClientBuilder) Hosts(hosts []string) *httpClientBuilder {
 	receiver.hosts = hosts
+	return receiver
+}
+
+func (receiver *httpClientBuilder) MainHost(host string) *httpClientBuilder {
+	receiver.mainHost = host
 	return receiver
 }
 
@@ -197,10 +203,11 @@ func (receiver *httpClientBuilder) fillDefault() {
 }
 
 func (receiver *httpClientBuilder) newHostAvailabler() (HostAvailabler, error) {
+	// if '.hosts' is set, then skip fetch hosts from server
 	if len(receiver.hosts) > 0 {
-		return receiver.hostAvailablerFactory.NewHostAvailabler("", receiver.hosts)
+		return receiver.hostAvailablerFactory.NewHostAvailabler(receiver.projectID, receiver.hosts, receiver.mainHost, true)
 	}
-	return receiver.hostAvailablerFactory.NewHostAvailabler(receiver.projectID, receiver.region.GetHosts())
+	return receiver.hostAvailablerFactory.NewHostAvailabler(receiver.projectID, receiver.region.GetHosts(), receiver.mainHost, false)
 }
 
 func (receiver *httpClientBuilder) initGlobalHostAvailabler() {

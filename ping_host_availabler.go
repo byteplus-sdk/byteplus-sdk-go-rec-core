@@ -39,7 +39,7 @@ type pingHostAvailabler struct {
 }
 
 func NewPingHostAvailabler(hosts []string, projectID string,
-	config *PingHostAvailablerConfig) (HostAvailabler, error) {
+	config *PingHostAvailablerConfig, mainHost string, skipFetchHosts bool) (HostAvailabler, error) {
 	hostAvailabler := &pingHostAvailabler{
 		config: fillDefaultConfig(config),
 		httpCli: &fasthttp.Client{
@@ -48,8 +48,10 @@ func NewPingHostAvailabler(hosts []string, projectID string,
 		hostWindowMap: make(map[string]*window, len(hosts)),
 	}
 	hostAvailabler.HostAvailablerBase = &HostAvailablerBase{
-		projectID:  projectID,
-		hostScorer: hostAvailabler,
+		projectID:      projectID,
+		hostScorer:     hostAvailabler,
+		skipFetchHosts: skipFetchHosts,
+		mainHost:       mainHost,
 	}
 	err := hostAvailabler.Init(hosts, hostAvailabler.config.FetchHostInterval, hostAvailabler.config.PingInterval)
 	if err != nil {
