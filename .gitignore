@@ -118,3 +118,6 @@ Temporary Items
 
 .idea
 go.sum
+/node_modules/
+/package.json
+/package-lock.json
